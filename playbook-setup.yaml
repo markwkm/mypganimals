@@ -1,0 +1,95 @@
+- name: Download & Install PostgreSQL BuildFarm
+  hosts: buildfarm
+  tasks:
+    - name: Check if Build Farm is already installed
+      stat:
+        path: "{{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }}"
+      register: dir
+    - name: Download PostgreSQL BuildFarm {{ build_farm_version }}
+      ansible.builtin.get_url:
+        url: "https://buildfarm.postgresql.org/downloads/releases/build-farm-{{ build_farm_version }}.tgz"
+        dest: /tmp
+      when: not dir.stat.exists
+    - name: Install PostgreSQL BuildFarm {{ build_farm_version }}
+      ansible.builtin.unarchive:
+        src: "/tmp/build-farm-{{ build_farm_version }}.tgz"
+        dest: "{{ install_path }}"
+        remote_src: true
+      when: not dir.stat.exists
+    - name: Rename install for this animal {{ inventory_hostname }}
+      ansible.builtin.shell:
+        cmd: >-
+          mv {{ install_path }}/build-farm-{{ build_farm_version }}
+          {{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }}
+      when: not dir.stat.exists
+    - name: Remove downloaded /tmp/build-farm-{{ build_farm_version }}.tgz
+      ansible.builtin.file:
+        path: "/tmp/build-farm-{{ build_farm_version }}.tgz"
+        state: absent
+      when: not dir.stat.exists
+
+- name: Configure Build Farm
+  hosts: buildfarm
+  tasks:
+    - name: Set config filenames
+      ansible.builtin.set_fact:
+        build_farm_conf: "{{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }}/build-farm.conf"
+        build_farm_conf_sample: "{{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }}/build-farm.conf.sample"
+    - name: Create build-farm.conf file
+      ansible.builtin.copy:
+        src: "{{ build_farm_conf_sample }}"
+        dest: "{{ build_farm_conf }}"
+        remote_src: true
+    - name: Set animal name
+      ansible.builtin.replace:
+        path: "{{ build_farm_conf }}"
+        regexp: 'animal => "CHANGEME"'
+        replace: 'animal => "{{ inventory_hostname }}"'
+    - name: Set secret
+      ansible.builtin.replace:
+        path: "{{ build_farm_conf }}"
+        regexp: 'secret => "CHANGEME"'
+        replace: 'secret => "{{ secret }}"'
+    - name: Set build_root
+      ansible.builtin.replace:
+        path: "{{ build_farm_conf }}"
+        regexp: 'build_root => undef'
+        replace: 'build_root => "$confdir/buildroot"'
+      when: build_root is defined
+    - name: Set CC
+      ansible.builtin.replace:
+        path: "{{ build_farm_conf }}"
+        regexp: 'ccache gcc'
+        replace: '{{ cc }}'
+      when: cc is defined
+    - name: Set config_opts
+      ansible.builtin.replace:
+        path: "{{ build_farm_conf }}"
+        regexp: '(config_opts =>[\s\S]*?)qw.*'
+        replace: |
+          config_opts => [
+                  qw(
+                  {{ config_opts_extra }}
+      when: config_opts_extra is defined
+    - name: Set email address for failures
+      ansible.builtin.replace:
+        path: "{{ build_farm_conf }}"
+        regexp: 'fail   => \[\]'
+        replace: 'fail   => [{{ email }}]'
+      when: email is defined
+    - name: Set global_lock_dir
+      ansible.builtin.replace:
+        path: "{{ build_farm_conf }}"
+        regexp: 'global_lock_dir => undef'
+        replace: 'global_lock_dir => {{ global_lock_dir }}'
+      when: global_lock_dir is defined
+    - name: Remove BEGIN ANSIBLE MANAGED BLOCK markers
+      ansible.builtin.lineinfile:
+        path: "{{ build_farm_conf }}"
+        regexp: '^# BEGIN ANSIBLE MANAGED BLOCK$'
+        state: absent
+    - name: Remove END ANSIBLE MANAGED BLOCK markers
+      ansible.builtin.lineinfile:
+        path: "{{ build_farm_conf }}"
+        regexp: '^# END ANSIBLE MANAGED BLOCK$'
+        state: absent

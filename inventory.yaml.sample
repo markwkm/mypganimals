@@ -1,0 +1,19 @@
+buildfarm:
+  hosts:
+    ANIMAL1:
+      ansible_host: 127.0.0.1
+      cc: gcc
+      config_opts_extra: |
+        --with-tclconfig=/usr/lib64
+      install_path: /tmp
+      secret: CHANGEME
+    ANIMAL2:
+      ansible_host: 127.0.0.1
+      install_path: /tmp
+      secret: CHANGEME
+      cc: ccache clang-4.0
+  vars:
+    build_farm_version: 16
+    build_root: "$confdir/buildroot"
+    email: "'you@example.com'"
+    global_lock_dir: "'/tmp'"
