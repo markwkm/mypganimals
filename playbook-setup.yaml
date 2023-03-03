@@ -1,4 +1,4 @@
-- name: Download & Install PostgreSQL BuildFarm
+- name: Download & Install & Configure PostgreSQL BuildFarm Animal
   hosts: buildfarm
   tasks:
     - name: Check if Build Farm is already installed
@@ -26,7 +26,7 @@
         dest: "{{ tempdir.path }}"
         remote_src: true
       when: not dir.stat.exists
-    - name: Rename install for this animal {{ inventory_hostname }}
+    - name: Rename Build Farm directory for this animal {{ inventory_hostname }}
       ansible.builtin.shell:
         cmd: >-
           mv {{ tempdir.path }}/build-farm-{{ build_farm_version }}
@@ -38,10 +38,10 @@
         state: absent
       when: not dir.stat.exists
 
-- name: Configure Build Farm
+- name: Configure Build Farm Animal
   hosts: buildfarm
   tasks:
-    - name: Set config filenames
+    - name: Create build-farm.conf file
       ansible.builtin.set_fact:
         build_farm_conf: "{{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }}/build-farm.conf"
         build_farm_conf_sample: "{{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }}/build-farm.conf.sample"

@@ -1,4 +1,4 @@
-- name: Test
+- name: Test Build Farm Configuration
   hosts: buildfarm
   tasks:
     - name: Test all branches
@@ -6,6 +6,6 @@
         cmd: ./run_branches.pl --force --run-all --test --verbose
         chdir: "{{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }}"
       register: output
-    - name: Display output
+    - name: Display output from test
       ansible.builtin.debug:
         var: output
