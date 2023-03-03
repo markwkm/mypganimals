@@ -5,10 +5,12 @@ buildfarm:
       cc: gcc
       config_opts_extra: |
         --with-tclconfig=/usr/lib64
+      hour: 8
       install_path: /tmp
       secret: CHANGEME
     ANIMAL2:
       ansible_host: 127.0.0.1
+      hour: 20
       install_path: /tmp
       secret: CHANGEME
       cc: ccache clang-4.0
@@ -17,3 +19,4 @@ buildfarm:
     build_root: "$confdir/buildroot"
     email: "'you@example.com'"
     global_lock_dir: "'/tmp'"
+    minute: 30

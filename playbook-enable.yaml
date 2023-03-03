@@ -1,0 +1,10 @@
+- name: Enable automatic building with cron
+  hosts: buildfarm
+  tasks:
+    - name: Set cron
+      ansible.builtin.cron:
+        name: "{{ inventory_hostname }}"
+        job: "cd {{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }} && ./run_branches.pl --run-al"
+        hour: "{{ hour }}"
+        minute: "{{ minute }}"
+      when: hour is defined and minute is defined
