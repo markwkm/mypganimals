@@ -2,7 +2,7 @@
   hosts: buildfarm
   tasks:
     - name: Check if Build Farm is already installed
-      stat:
+      ansible.builtin.stat:
         path: "{{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }}"
       register: dir
     # Use tempdir because some animals may be on the same system.
