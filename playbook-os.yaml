@@ -1,0 +1,236 @@
+---
+- hosts: buildfarm
+  gather_facts: true
+  tasks:
+    - name: Explicitly update repositories (Debian & Ubuntu)
+      ansible.builtin.command:
+        cmd: apt-get --yes update
+      become: true
+      when: ansible_distribution == "Ubuntu" or ansible_distribution == "Debian"
+
+    - name: Update package repository (FreeBSD)
+      ansible.builtin.command:
+        cmd: pkg update
+      become: true
+      when: ansible_distribution == "FreeBSD"
+
+    - name: Install packages (FreeBSD)
+      ansible.builtin.command:
+        cmd: >-
+          pkg install -y bison flex gdb gettext git gmake gtar icu icu-le-hb krb5-devel libxml2 libxslt openldap26-client openssl p5-LWP-Protocol-https p5-libwww perl5 python3 readline screen tcl86 tmux
+      become: true
+      when: ansible_distribution == "FreeBSD"
+
+    - name: Install packages (Debian)
+      ansible.builtin.package:
+        name:
+          - bison
+          - ccache
+          - clang*
+          - cron
+          - flex
+          - gcc
+          - gettext
+          - git
+          - gdb
+          - libgcrypt-dev
+          - libicu-dev
+          - libkrb5-dev
+          - libldap2-dev
+          - libperl-dev
+          - libreadline-dev
+          - libssl-dev
+          - libxml2-dev
+          - libxslt-dev
+          - libwww-perl
+          - make
+          - perl
+          - perl-modules
+          - python3-dev
+          - screen
+          - tcl
+          - tcl-dev
+          - tmux
+          - valgrind
+          - zlib1g-dev
+        state: latest
+      become: true
+      when: ansible_distribution == "Debian"
+
+    - name: Install packages (Fedora 36)
+      ansible.builtin.package:
+        name:
+          - bison
+          - ccache
+          - clang*
+          - cronie
+          - flex
+          - gcc
+          - git
+          - gdb
+          - krb5-devel
+          - libgcrypt-devel
+          - libicu-devel
+          - libxml2-devel
+          - libxslt-devel
+          - make
+          - openldap-devel
+          - openssl-devel
+          - perl
+          - perl-LWP-Protocol-https
+          - python3-devel
+          - readline-devel
+          - screen
+          - tar
+          - tcl
+          - tcl-devel
+          - tmux
+          - valgrind
+          - zlib-devel
+        state: present
+      become: true
+      when: (ansible_distribution == "Fedora" and ansible_distribution_version == "36")
+
+    - name: Install packages (AlmaLinux 8 & Fedora 38)
+      ansible.builtin.package:
+        name:
+          - bison
+          - ccache
+          - clang
+          - cronie
+          - flex
+          - icu
+          - gcc
+          - git
+          - gdb
+          - gettext
+          - krb5-devel
+          - libgcrypt-devel
+          - libicu-devel
+          - libxml2-devel
+          - libxslt-devel
+          - make
+          - openldap-devel
+          - openssl-devel
+          - perl
+          - perl-LWP-Protocol-https
+          - python3-devel
+          - readline-devel
+          - screen
+          - tar
+          - tcl
+          - tcl-devel
+          - tmux
+          - valgrind
+          - zlib-devel
+        state: present
+      become: true
+      when: (ansible_distribution == "Fedora" and ansible_distribution_version == "38") or (ansible_distribution == "AlmaLinux" and ansible_distribution_major_version == "8")
+
+    - name: Install packages (CentOS)
+      ansible.builtin.package:
+        name:
+          - bison
+          - clang
+          - cronie
+          - flex
+          - icu
+          - gcc
+          - git
+          - gdb
+          - gettext
+          - krb5-devel
+          - libgcrypt-devel
+          - libicu-devel
+          - libxml2-devel
+          - libxslt-devel
+          - make
+          - openldap-devel
+          - openssl-devel
+          - perl
+          - perl-Digest-SHA
+          - perl-ExtUtils-Embed
+          - perl-ExtUtils-MakeMaker
+          - perl-JSON-PP
+          - perl-LWP-Protocol-https
+          - python3-devel
+          - readline-devel
+          - tar
+          - tcl
+          - tcl-devel
+          - tmux
+          - valgrind
+          - zlib-devel
+        state: present
+      become: true
+      when: ansible_distribution == "CentOS"
+
+    - name: Install packages (AlmaLinux 9)
+      ansible.builtin.package:
+        name:
+          - bison
+          - clang
+          - cronie
+          - flex
+          - icu
+          - gcc
+          - git
+          - gdb
+          - gettext
+          - krb5-devel
+          - libgcrypt-devel
+          - libicu-devel
+          - libxml2-devel
+          - libxslt-devel
+          - make
+          - openldap-devel
+          - openssl-devel
+          - perl
+          - perl-LWP-Protocol-https
+          - python3-devel
+          - readline-devel
+          - tar
+          - tcl
+          - tcl-devel
+          - tmux
+          - valgrind
+          - zlib-devel
+        state: present
+      become: true
+      when: (ansible_distribution == "AlmaLinux" and ansible_distribution_major_version == "9")
+
+    - name: Install packages (Ubuntu)
+      ansible.builtin.package:
+        name:
+          - bison
+          - ccache
+          - clang*
+          - cron
+          - flex
+          - gcc
+          - gettext
+          - git
+          - gdb
+          - libgcrypt-dev
+          - libicu-dev
+          - libicu-le-hb-dev
+          - libkrb5-dev
+          - libldap2-dev
+          - libperl-dev
+          - libreadline-dev
+          - libssl-dev
+          - libxml2-dev
+          - libxslt-dev
+          - libwww-perl
+          - make
+          - perl
+          - python3-dev
+          - screen
+          - tcl
+          - tcl-dev
+          - tmux
+          - valgrind
+          - zlib1g-dev
+        state: latest
+      become: true
+      when: ansible_distribution == "Ubuntu"
