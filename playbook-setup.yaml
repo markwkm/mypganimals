@@ -99,6 +99,12 @@
         regexp: 'global_lock_dir => undef'
         replace: 'global_lock_dir => {{ global_lock_dir }}'
       when: global_lock_dir is defined
+    - name: Rename force_parallel_mode to debug_parallel_query
+      ansible.builtin.replace:
+        path: "{{ build_farm_conf }}"
+        regexp: 'force_parallel_mode'
+        replace: 'debug_parallel_query'
+      when: global_lock_dir is defined
     - name: Remove BEGIN ANSIBLE MANAGED BLOCK markers
       ansible.builtin.lineinfile:
         path: "{{ build_farm_conf }}"
