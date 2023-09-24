@@ -72,6 +72,12 @@
         regexp: 'ccache gcc'
         replace: '{{ cc }}'
       when: cc is defined
+    - name: Set make
+      ansible.builtin.replace:
+        path: "{{ build_farm_conf }}"
+        regexp: "make => 'make'"
+        replace: "make => '{{ make }}'"
+      when: make is defined
     - name: Set config_opts
       ansible.builtin.replace:
         path: "{{ build_farm_conf }}"
