@@ -3,7 +3,7 @@
   tasks:
     - name: Check if Build Farm is already installed
       ansible.builtin.stat:
-        path: "{{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }}"
+        path: "{{ install_path }}/{{ build_farm_version }}-{{ inventory_hostname }}"
       register: dir
     # Use tempdir because some animals may be on the same system.
     - name: Create tempdir
@@ -30,7 +30,7 @@
       ansible.builtin.shell:
         cmd: >-
           mv {{ tempdir.path }}/build-farm-{{ build_farm_version }}
-          {{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }}
+          {{ install_path }}/{{ build_farm_version }}-{{ inventory_hostname }}
       when: not dir.stat.exists
     - name: Remove tempdir
       ansible.builtin.file:
@@ -43,8 +43,8 @@
   tasks:
     - name: Create build-farm.conf file
       ansible.builtin.set_fact:
-        build_farm_conf: "{{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }}/build-farm.conf"
-        build_farm_conf_sample: "{{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }}/build-farm.conf.sample"
+        build_farm_conf: "{{ install_path }}/{{ build_farm_version }}-{{ inventory_hostname }}/build-farm.conf"
+        build_farm_conf_sample: "{{ install_path }}/{{ build_farm_version }}-{{ inventory_hostname }}/build-farm.conf.sample"
     - name: Create build-farm.conf file
       ansible.builtin.copy:
         src: "{{ build_farm_conf_sample }}"

@@ -4,7 +4,7 @@
     - name: Set cron
       ansible.builtin.cron:
         name: "{{ inventory_hostname }}"
-        job: "cd {{ install_path }}/build-farm-{{ build_farm_version }}-{{ inventory_hostname }} && ./run_branches.pl --run-al"
+        job: "cd {{ install_path }}/{{ build_farm_version }}-{{ inventory_hostname }} && perl ./run_branches.pl --run-all"
         hour: "{{ hour }}"
         minute: "{{ minute }}"
       when: hour is defined and minute is defined
