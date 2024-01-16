@@ -2,6 +2,25 @@
 - hosts: buildfarm
   gather_facts: true
   tasks:
+    - name: Enable unlimited core size for all users
+      community.general.pam_limits:
+        domain: "*"
+        limit_type: "-"
+        limit_item: "core"
+        value: "unlimited"
+      become: true
+      when: ansible_distribution != "FreeBSD"
+
+    - name: Reset kernel.core_pattern to linux source default
+      ansible.posix.sysctl:
+        name: kernel.core_pattern
+        value: 'core'
+        sysctl_set: true
+        state: present
+        reload: true
+      become: true
+      when: ansible_distribution != "FreeBSD"
+
     - name: Explicitly update repositories (Debian & Ubuntu)
       ansible.builtin.command:
         cmd: apt-get --yes update
@@ -10,7 +29,7 @@
 
     - name: Update package repository (FreeBSD)
       ansible.builtin.command:
-        cmd: pkg update
+        cmd: pkg update -f
       become: true
       when: ansible_distribution == "FreeBSD"
 
@@ -35,6 +54,7 @@
           - gdb
           - libgcrypt-dev
           - libicu-dev
+          - libicu-le-hb-dev
           - libkrb5-dev
           - libldap2-dev
           - libperl-dev
@@ -43,6 +63,7 @@
           - libxml2-dev
           - libxslt-dev
           - libwww-perl
+          - llvm-dev
           - make
           - perl
           - perl-modules
@@ -127,11 +148,50 @@
       become: true
       when: (ansible_distribution == "Fedora" and ansible_distribution_version == "38") or (ansible_distribution == "AlmaLinux" and ansible_distribution_major_version == "8")
 
-    - name: Install packages (CentOS)
+    - name: Install packages (RedHat/CentOS)
       ansible.builtin.package:
         name:
           - bison
           - clang
+          - cronie
+          - flex
+          - icu
+          - gcc
+          - git
+          - gdb
+          - gettext
+          - krb5-devel
+          - libgcrypt-devel
+          - libicu-devel
+          - libxml2-devel
+          - libxslt-devel
+          - llvm
+          - llvm-devel
+          - make
+          - openldap-devel
+          - openssl-devel
+          - perl
+          - perl-Digest-SHA
+          - perl-ExtUtils-Embed
+          - perl-ExtUtils-MakeMaker
+          - perl-JSON-PP
+          - perl-LWP-Protocol-https
+          - python3-devel
+          - readline-devel
+          - tar
+          - tcl
+          - tcl-devel
+          - tmux
+          - valgrind
+          - zlib-devel
+        state: present
+      become: true
+      when: ((ansible_distribution == "CentOS") or (ansible_distribution == "RedHat")) and ansible_distribution_major_version > "7"
+
+    - name: Install packages (RedHat/CentOS 7)
+      ansible.builtin.package:
+        name:
+          - bison
           - cronie
           - flex
           - icu
@@ -163,7 +223,7 @@
           - zlib-devel
         state: present
       become: true
-      when: ansible_distribution == "CentOS"
+      when: ((ansible_distribution == "CentOS") or (ansible_distribution == "RedHat")) and ansible_distribution_major_version == "7"
 
     - name: Install packages (AlmaLinux 9)
       ansible.builtin.package:
@@ -222,6 +282,7 @@
           - libxml2-dev
           - libxslt-dev
           - libwww-perl
+          - llvm-dev
           - make
           - perl
           - python3-dev
