@@ -146,7 +146,44 @@
           - zlib-devel
         state: present
       become: true
-      when: (ansible_distribution == "Fedora" and ansible_distribution_version == "38") or (ansible_distribution == "AlmaLinux" and ansible_distribution_major_version == "8")
+      when: (ansible_distribution == "Fedora" and ansible_distribution_version | int == 38) or (ansible_distribution == "AlmaLinux" and ansible_distribution_major_version == "8")
+
+    - name: Install packages (Fedora 39)
+      ansible.builtin.package:
+        name:
+          - bison
+          - ccache
+          - clang
+          - cronie
+          - flex
+          - icu
+          - gcc
+          - git
+          - gdb
+          - gettext
+          - krb5-devel
+          - libgcrypt-devel
+          - libicu-devel
+          - libxml2-devel
+          - libxslt-devel
+          - llvm-devel
+          - make
+          - openldap-devel
+          - openssl-devel
+          - perl
+          - perl-LWP-Protocol-https
+          - python3-devel
+          - readline-devel
+          - screen
+          - tar
+          - tcl
+          - tcl-devel
+          - tmux
+          - valgrind
+          - zlib-devel
+        state: present
+      become: true
+      when: (ansible_distribution == "Fedora" and ansible_distribution_version | int >= 39)
 
     - name: Install packages (RedHat/CentOS)
       ansible.builtin.package:
@@ -258,6 +295,86 @@
         state: present
       become: true
       when: (ansible_distribution == "AlmaLinux" and ansible_distribution_major_version == "9")
+
+    - name: Install packages (SLES 12.5)
+      ansible.builtin.package:
+        name:
+          - bison
+          - ccache
+          - cronie
+          - flex
+          - gcc
+          - gcc-c++
+          - git
+          - gdb
+          - gettext-runtime
+          - krb5-devel
+          - libicu-devel
+          - libxml2-devel
+          - libxslt-devel
+          - make
+          - openldap2-devel
+          - openssl-devel
+          - perl
+          - perl-Digest-SHA1
+          - perl-JSON
+          - perl-LWP-Protocol-https
+          - python3-devel
+          - python36
+          - python36-devel
+          - readline-devel
+          - tar
+          - tcl
+          - tcl-devel
+          - tmux
+          - valgrind
+          - zlib-devel
+        state: present
+      become: true
+      when: ansible_distribution == "SLES" and ansible_distribution_version == "12.5"
+
+    - name: Install packages (SLES 15.2)
+      ansible.builtin.package:
+        name:
+          - bison
+          - ccache
+          - clang
+          - cronie
+          - flex
+          - icu
+          - gcc
+          - gcc-c++
+          - gcc11
+          - gcc11-c++
+          - git
+          - gdb
+          - gettext
+          - krb5-devel
+          - libgcrypt-devel
+          - libicu-devel
+          - libxml2-devel
+          - libxslt-devel
+          - llvm
+          - llvm7-devel
+          - make
+          - openldap2-devel
+          - openssl-devel
+          - perl
+          - perl-Digest-SHA1
+          - perl-ExtUtils-MakeMaker
+          - perl-JSON
+          - perl-LWP-Protocol-https
+          - python3-devel
+          - readline-devel
+          - tar
+          - tcl
+          - tcl-devel
+          - tmux
+          - valgrind
+          - zlib-devel
+        state: present
+      become: true
+      when: ansible_distribution == "SLES" and ansible_distribution_version == "15.2"
 
     - name: Install packages (Ubuntu)
       ansible.builtin.package:
