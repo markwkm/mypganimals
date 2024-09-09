@@ -448,4 +448,40 @@
           - zlib1g-dev
         state: latest
       become: true
-      when: ansible_distribution == "Ubuntu"
+      when: ansible_distribution == "Ubuntu" and ansible_distribution_version < "24.04"
+
+    - name: Install packages (Ubuntu)
+      ansible.builtin.package:
+        name:
+          - bison
+          - ccache
+          - clang*
+          - cron
+          - flex
+          - gcc
+          - gettext
+          - git
+          - gdb
+          - libgcrypt-dev
+          - libicu-dev
+          - libkrb5-dev
+          - libldap2-dev
+          - libperl-dev
+          - libreadline-dev
+          - libssl-dev
+          - libxml2-dev
+          - libxslt-dev
+          - libwww-perl
+          - llvm-dev
+          - make
+          - perl
+          - python3-dev
+          - screen
+          - tcl
+          - tcl-dev
+          - tmux
+          - valgrind
+          - zlib1g-dev
+        state: latest
+      become: true
+      when: ansible_distribution == "Ubuntu" and ansible_distribution_version >= "24.04"
