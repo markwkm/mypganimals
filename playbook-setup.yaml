@@ -17,12 +17,12 @@
         #when: not dir.stat.exists
     - name: Download PostgreSQL BuildFarm {{ build_farm_version }}
       ansible.builtin.get_url:
-        url: "https://buildfarm.postgresql.org/downloads/releases/build-farm-{{ build_farm_version }}.tgz"
+        url: "https://buildfarm.postgresql.org/downloads/releases/build-farm-{{ build_farm_version | replace('.', '_') }}.tgz"
         dest: "{{ tempdir.path }}"
       when: not dir.stat.exists
     - name: Unpack PostgreSQL BuildFarm {{ build_farm_version }}
       ansible.builtin.unarchive:
-        src: "{{ tempdir.path }}/build-farm-{{ build_farm_version }}.tgz"
+        src: "{{ tempdir.path }}/build-farm-{{ build_farm_version | replace('.', '_') }}.tgz"
         dest: "{{ tempdir.path }}"
         remote_src: true
       when: not dir.stat.exists
