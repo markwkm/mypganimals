@@ -87,11 +87,17 @@
                   qw(
                   {{ config_opts_extra }}
       when: config_opts_extra is defined
+    - name: Set email address for change
+      ansible.builtin.replace:
+        path: "{{ build_farm_conf }}"
+        regexp: 'change => \[\]'
+        replace: 'change => [{{ email }}]'
+      when: email is defined
     - name: Set email address for failures
       ansible.builtin.replace:
         path: "{{ build_farm_conf }}"
-        regexp: 'fail   => \[\]'
-        replace: 'fail   => [{{ email }}]'
+        regexp: 'fail => \[\]'
+        replace: 'fail => [{{ email }}]'
       when: email is defined
     - name: Set global_lock_dir
       ansible.builtin.replace:
