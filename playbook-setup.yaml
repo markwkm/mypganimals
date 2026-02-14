@@ -110,7 +110,6 @@
         path: "{{ build_farm_conf }}"
         regexp: 'force_parallel_mode'
         replace: 'debug_parallel_query'
-      when: global_lock_dir is defined
     - name: Remove BEGIN ANSIBLE MANAGED BLOCK markers
       ansible.builtin.lineinfile:
         path: "{{ build_farm_conf }}"
