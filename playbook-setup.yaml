@@ -27,7 +27,7 @@
         remote_src: true
       when: not dir.stat.exists
     - name: Rename Build Farm directory for this animal {{ inventory_hostname }}
-      ansible.builtin.shell:
+      ansible.builtin.command:
         cmd: >-
           mv {{ tempdir.path }}/build-farm-{{ build_farm_version }}
           {{ install_path }}/{{ build_farm_version }}-{{ inventory_hostname }}

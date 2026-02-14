@@ -2,7 +2,7 @@
   hosts: buildfarm
   tasks:
     - name: Test all branches
-      ansible.builtin.shell:
+      ansible.builtin.command:
         cmd: ./run_branches.pl --force --run-all --test --verbose
         chdir: "{{ install_path }}/{{ build_farm_version }}-{{ inventory_hostname }}"
       register: output
