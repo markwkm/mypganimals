@@ -417,7 +417,7 @@
       become: true
       when: ansible_distribution == "SLES" and ansible_distribution_version | float == 15.2
 
-    - name: Install packages (Ubuntu)
+    - name: Install packages (Ubuntu < 24.04)
       ansible.builtin.package:
         name:
           - bison
@@ -452,9 +452,9 @@
           - zlib1g-dev
         state: latest
       become: true
-      when: ansible_distribution == "Ubuntu" and ansible_distribution_version | int < 24.04
+      when: ansible_distribution == "Ubuntu" and ansible_distribution_version | float < 24.04
 
-    - name: Install packages (Ubuntu)
+    - name: Install packages (Ubuntu >= 24.04)
       ansible.builtin.package:
         name:
           - bison
