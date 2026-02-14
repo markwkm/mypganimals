@@ -1,22 +1,33 @@
-buildfarm:
-  hosts:
-    ANIMAL1:
-      ansible_host: 127.0.0.1
-      cc: gcc
-      config_opts_extra: |
-        --with-tclconfig=/usr/lib64
-      hour: 8
-      install_path: /tmp
-      secret: CHANGEME
-    ANIMAL2:
-      ansible_host: 127.0.0.1
-      hour: 20
-      install_path: /tmp
-      secret: CHANGEME
-      cc: ccache clang-4.0
-  vars:
-    build_farm_version: 16
-    build_root: "$confdir/buildroot"
-    email: "'you@example.com'"
-    global_lock_dir: "'/tmp'"
-    minute: 30
+all:
+  children:
+    # Unique physical/virtual hosts for OS setup (playbook-os.yaml)
+    # This prevents package manager conflicts when multiple animals
+    # share the same host
+    hosts:
+      hosts:
+        HOST1:
+          ansible_host: 127.0.0.1
+
+    # Animals for Build Farm setup (playbook-setup.yaml, etc.)
+    buildfarm:
+      hosts:
+        ANIMAL1:
+          ansible_host: 127.0.0.1
+          cc: gcc
+          config_opts_extra: |
+            --with-tclconfig=/usr/lib64
+          hour: 8
+          install_path: /tmp
+          secret: CHANGEME
+        ANIMAL2:
+          ansible_host: 127.0.0.1
+          hour: 20
+          install_path: /tmp
+          secret: CHANGEME
+          cc: ccache clang-4.0
+      vars:
+        build_farm_version: 16
+        build_root: "$confdir/buildroot"
+        email: "'you@example.com'"
+        global_lock_dir: "'/tmp'"
+        minute: 30

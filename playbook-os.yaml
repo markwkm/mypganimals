@@ -1,5 +1,5 @@
 ---
-- hosts: buildfarm
+- hosts: hosts
   gather_facts: true
   tasks:
     - name: Enable unlimited core size for all users
