@@ -57,6 +57,7 @@
           - libicu-le-hb-dev
           - libkrb5-dev
           - libldap2-dev
+          - liblz4-dev
           - libperl-dev
           - libreadline-dev
           - libssl-dev
@@ -94,6 +95,7 @@
           - libicu-dev
           - libkrb5-dev
           - libldap2-dev
+          - liblz4-dev
           - libperl-dev
           - libreadline-dev
           - libssl-dev
@@ -132,6 +134,7 @@
           - libicu-devel
           - libxml2-devel
           - libxslt-devel
+          - lz4-devel
           - make
           - openldap-devel
           - openssl-devel
@@ -169,6 +172,7 @@
           - libxml2-devel
           - libxslt-devel
           - llvm
+          - lz4-devel
           - make
           - openldap-devel
           - openssl-devel
@@ -206,6 +210,7 @@
           - libxml2-devel
           - libxslt-devel
           - llvm-devel
+          - lz4-devel
           - make
           - openldap-devel
           - openssl-devel
@@ -243,6 +248,7 @@
           - libxslt-devel
           - llvm
           - llvm-devel
+          - lz4-devel
           - make
           - openldap-devel
           - openssl-devel
@@ -280,6 +286,7 @@
           - libicu-devel
           - libxml2-devel
           - libxslt-devel
+          - lz4-devel
           - make
           - openldap-devel
           - openssl-devel
@@ -320,6 +327,7 @@
           - libxml2-devel
           - libxslt-devel
           - llvm
+          - lz4-devel
           - make
           - openldap-devel
           - openssl-devel
@@ -351,6 +359,7 @@
           - gettext-runtime
           - krb5-devel
           - libicu-devel
+          - liblz4-devel
           - libxml2-devel
           - libxslt-devel
           - make
@@ -393,6 +402,7 @@
           - krb5-devel
           - libgcrypt-devel
           - libicu-devel
+          - liblz4-devel
           - libxml2-devel
           - libxslt-devel
           - llvm
@@ -440,6 +450,7 @@
           - libxml2-dev
           - libxslt-dev
           - libwww-perl
+          - liblz4-dev
           - llvm-dev
           - make
           - perl
@@ -470,6 +481,7 @@
           - libicu-dev
           - libkrb5-dev
           - libldap2-dev
+          - liblz4-dev
           - libperl-dev
           - libreadline-dev
           - libssl-dev
