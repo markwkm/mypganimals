@@ -1,3 +1,4 @@
+---
 - name: Download & Install & Configure PostgreSQL BuildFarm Animal
   hosts: buildfarm
   tasks:
@@ -72,6 +73,13 @@
         regexp: 'ccache gcc'
         replace: '{{ cc }}'
       when: cc is defined
+    - name: Set CXX
+      when: cxx is defined
+      block:
+        - ansible.builtin.lineinfile:
+            path: "{{ build_farm_conf }}"
+            insertafter: '^\s*CC\s*=>'
+            line: "                CXX=> '{{ cxx }}',"
     - name: Set make
       ansible.builtin.replace:
         path: "{{ build_farm_conf }}"
