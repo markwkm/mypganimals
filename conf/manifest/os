@@ -1,0 +1,9 @@
+#!/bin/sh
+# Install OS packages for build farm
+#
+# Usage:
+#   skonfig -i conf/manifest/os HOST
+
+. "$__manifest/common"
+
+__buildfarm_packages "${__target_host}"

@@ -1,0 +1,34 @@
+#!/bin/sh
+set -x
+# Set up build farm animals
+#
+# Usage:
+#   skonfig -i conf/manifest/setup HOST
+
+. "$__manifest/common"
+
+for animal_conf in "$host_dir"/*.conf; do
+    [ -f "$animal_conf" ] || continue
+
+    animal=$(basename "$animal_conf" .conf)
+
+    # Reset optional vars
+    config_opts_extra=""
+    cxx=""
+    make="make"
+
+    . "$animal_conf"
+
+    __buildfarm_setup "$animal" \
+        --version "$BUILD_FARM_VERSION" \
+        --secret "$secret" \
+        --cc "$cc" \
+        --install-path "$install_path" \
+        --email "$EMAIL" \
+        --build-root "$BUILD_ROOT" \
+        --global-lock-dir "$GLOBAL_LOCK_DIR" \
+        --default-config-opts "$DEFAULT_CONFIG_OPTS" \
+        ${cxx:+--cxx "$cxx"} \
+        ${config_opts_extra:+--config-opts-extra "$config_opts_extra"} \
+        ${make:+--make "$make"}
+done

@@ -1,0 +1,4 @@
+[skonfig]
+remote_out_path = /tmp/skonfig
+conf_dir = conf
+remote_exec = ssh -F ssh_config

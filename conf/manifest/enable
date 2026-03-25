@@ -1,0 +1,21 @@
+#!/bin/sh
+# Enable cron jobs for build farm animals
+#
+# Usage:
+#   skonfig -i conf/manifest/enable HOST
+
+. "$__manifest/common"
+
+for animal_conf in "$host_dir"/*.conf; do
+    [ -f "$animal_conf" ] || continue
+
+    animal=$(basename "$animal_conf" .conf)
+
+    . "$animal_conf"
+
+    __buildfarm_cron "$animal" \
+        --version "$BUILD_FARM_VERSION" \
+        --hour "$hour" \
+        --minute "$MINUTE" \
+        --install-path "$install_path"
+done

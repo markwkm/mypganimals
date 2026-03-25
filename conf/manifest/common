@@ -1,0 +1,13 @@
+#!/bin/sh
+# Common setup for all manifests
+# Source this at the start of each manifest
+
+# Load global configuration
+. "$__manifest/global.conf"
+
+# Check for host directory
+host_dir="$__manifest/hosts/${__target_host}"
+if [ ! -d "$host_dir" ]; then
+    echo "No configuration found for ${__target_host}" >&2
+    exit 0
+fi

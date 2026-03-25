@@ -1,0 +1,42 @@
+#!/bin/sh
+# __buildfarm_cron/gencode-remote
+#
+# Sets up cron job for a PostgreSQL Build Farm animal
+
+animal="$__object_id"
+version="$(cat "$__object/parameter/version")"
+hour="$(cat "$__object/parameter/hour")"
+minute="$(cat "$__object/parameter/minute")"
+install_path="$(cat "$__object/parameter/install-path")"
+
+cat << DONE
+set -e
+
+animal="$animal"
+version="$version"
+hour="$hour"
+minute="$minute"
+install_path="$install_path"
+
+install_dir="\${install_path}/\${version}-\${animal}"
+cron_job="cd \$install_dir && perl ./run_branches.pl --run-all"
+cron_entry="\$minute \$hour * * * \$cron_job"
+
+# Check if cron job already exists
+existing=\$(crontab -l 2>/dev/null | grep -F "\$animal" || true)
+
+if [ -z "\$existing" ]; then
+    # Add new cron job
+    (crontab -l 2>/dev/null || true; echo "\$cron_entry") | crontab -
+    echo "Added cron job for \$animal at \$hour:\$minute"
+else
+    # Update existing cron job if different
+    current_entry=\$(crontab -l 2>/dev/null | grep -F "\$animal")
+    if [ "\$current_entry" != "\$cron_entry" ]; then
+        crontab -l 2>/dev/null | grep -v -F "\$animal" | { cat; echo "\$cron_entry"; } | crontab -
+        echo "Updated cron job for \$animal"
+    else
+        echo "Cron job for \$animal already configured"
+    fi
+fi
+DONE

@@ -1,0 +1,27 @@
+#!/bin/sh
+# __buildfarm_test/gencode-remote
+#
+# Tests a PostgreSQL Build Farm animal configuration
+
+animal="$__object_id"
+version="$(cat "$__object/parameter/version")"
+install_path="$(cat "$__object/parameter/install-path")"
+
+cat << DONE
+set -e
+
+animal="$animal"
+version="$version"
+install_path="$install_path"
+
+install_dir="\${install_path}/\${version}-\${animal}"
+
+if [ ! -d "\$install_dir" ]; then
+    echo "Error: Build Farm not installed at \$install_dir" >&2
+    exit 1
+fi
+
+cd "\$install_dir"
+echo "Testing \$animal..."
+./run_branches.pl --force --run-all --test --verbose
+DONE

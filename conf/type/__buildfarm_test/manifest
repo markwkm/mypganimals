@@ -1,0 +1,4 @@
+#!/bin/sh
+# __buildfarm_test/manifest
+#
+# Tests a PostgreSQL Build Farm animal configuration

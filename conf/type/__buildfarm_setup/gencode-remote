@@ -1,0 +1,116 @@
+#!/bin/sh
+set -x
+# __buildfarm_setup/gencode-remote
+#
+# Downloads, installs, and configures a PostgreSQL Build Farm animal
+
+animal="$__object_id"
+version="$(cat "$__object/parameter/version")"
+secret="$(cat "$__object/parameter/secret")"
+cc="$(cat "$__object/parameter/cc")"
+install_path="$(cat "$__object/parameter/install-path")"
+email="$(cat "$__object/parameter/email")"
+build_root="$(cat "$__object/parameter/build-root")"
+global_lock_dir="$(cat "$__object/parameter/global-lock-dir")"
+default_config_opts="$(cat "$__object/parameter/default-config-opts")"
+
+cxx=""
+[ -f "$__object/parameter/cxx" ] && cxx="$(cat "$__object/parameter/cxx")"
+
+config_opts_extra=""
+[ -f "$__object/parameter/config-opts-extra" ] && config_opts_extra="$(cat "$__object/parameter/config-opts-extra")"
+
+make_cmd="make"
+[ -f "$__object/parameter/make" ] && make_cmd="$(cat "$__object/parameter/make")"
+
+# Convert version for URL (19.1 -> 19_1)
+version_url=$(echo "$version" | tr '.' '_')
+
+cat << DONE
+set -e
+
+animal="$animal"
+version="$version"
+version_url="$version_url"
+secret="$secret"
+cc="$cc"
+cxx="$cxx"
+install_path="$install_path"
+email="$email"
+build_root="$build_root"
+global_lock_dir="$global_lock_dir"
+config_opts_extra="$config_opts_extra"
+default_config_opts="$default_config_opts"
+make_cmd="$make_cmd"
+
+install_dir="\${install_path}/\${version}-\${animal}"
+conf_file="\${install_dir}/build-farm.conf"
+conf_sample="\${install_dir}/build-farm.conf.sample"
+
+# Check if already installed
+if [ ! -d "\$install_dir" ]; then
+    echo "Installing Build Farm \$version for \$animal..."
+
+    # Create temp directory
+    tmpdir=\$(mktemp -d)
+    trap "rm -rf \$tmpdir" EXIT
+
+    # Download
+    cd "\$tmpdir"
+    curl -fsSL -o "build-farm-\${version_url}.tgz" \\
+        "https://buildfarm.postgresql.org/downloads/releases/build-farm-\${version_url}.tgz"
+
+    # Extract
+    tar xzf "build-farm-\${version_url}.tgz"
+
+    # Move to install location
+    mv "build-farm-\${version}" "\$install_dir"
+
+    echo "Build Farm installed to \$install_dir"
+fi
+
+# Configure build-farm.conf
+cp "\$conf_sample" "\$conf_file"
+
+# Set animal name
+sed -i "s/animal => \"CHANGEME\"/animal => \"\$animal\"/" "\$conf_file"
+
+# Set secret
+sed -i "s/secret => \"CHANGEME\"/secret => \"\$secret\"/" "\$conf_file"
+
+# Set build_root
+sed -i "s|build_root => undef|build_root => \"\$build_root\"|" "\$conf_file"
+
+# Set CC
+sed -i "s/ccache gcc/\$cc/" "\$conf_file"
+
+# Set CXX if defined
+if [ -n "\$cxx" ]; then
+    # Insert CXX line after CC line
+    sed -i "/^[[:space:]]*CC[[:space:]]*=>/a\\                CXX=> '\$cxx'," "\$conf_file"
+fi
+
+# Set make command
+if [ "\$make_cmd" != "make" ]; then
+    sed -i "s/make => 'make'/make => '\$make_cmd'/" "\$conf_file"
+fi
+
+# Set config_opts
+sed -i '/config_opts[[:blank:]]*=>[[:blank:]]*\[/{:a;N;/)/!ba;s/qw([^)]*)/qw($default_config_opts $config_opts_extra)/}' "\$conf_file"
+
+# Set email addresses (single quotes needed for Perl config)
+sed -i "s/change => \\[\\]/change => ['\$email']/" "\$conf_file"
+sed -i "s/fail => \\[\\]/fail => ['\$email']/" "\$conf_file"
+
+# Set global_lock_dir (single quotes needed for Perl config)
+sed -i "s|global_lock_dir => undef|global_lock_dir => '\$global_lock_dir'|" "\$conf_file"
+
+# Rename force_parallel_mode to debug_parallel_query (for newer PostgreSQL)
+sed -i "s/force_parallel_mode/debug_parallel_query/g" "\$conf_file"
+
+# Remove any Ansible markers if present
+sed -i '/^# BEGIN ANSIBLE MANAGED BLOCK$/d' "\$conf_file"
+sed -i '/^# END ANSIBLE MANAGED BLOCK$/d' "\$conf_file"
+
+echo "Configured \$animal"
+DONE

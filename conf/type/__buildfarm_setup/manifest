@@ -1,0 +1,4 @@
+#!/bin/sh
+# __buildfarm_setup/manifest
+#
+# Downloads, installs, and configures a PostgreSQL Build Farm animal

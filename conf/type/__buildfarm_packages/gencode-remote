@@ -1,0 +1,142 @@
+#!/bin/sh
+# __buildfarm_packages/gencode-remote
+#
+# Installs required packages for PostgreSQL Build Farm
+
+cat << 'DONE'
+set -e
+
+# Detect OS
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    os_id="$ID"
+    os_version="$VERSION_ID"
+    os_major="${VERSION_ID%%.*}"
+elif [ -f /etc/redhat-release ]; then
+    if grep -qi "centos" /etc/redhat-release; then
+        os_id="centos"
+    elif grep -qi "red hat" /etc/redhat-release; then
+        os_id="rhel"
+    fi
+    os_version=$(grep -oE '[0-9]+\.[0-9]+' /etc/redhat-release | head -1)
+    os_major="${os_version%%.*}"
+else
+    os_id=$(uname -s | tr '[:upper:]' '[:lower:]')
+fi
+
+# Configure system settings (core dumps)
+configure_system() {
+    # Enable unlimited core size for all users (requires root)
+    if [ "$(id -u)" = "0" ] || command -v sudo >/dev/null 2>&1; then
+        SUDO=""
+        [ "$(id -u)" != "0" ] && SUDO="sudo"
+
+        # Set pam_limits for core dumps
+        if [ -d /etc/security/limits.d ]; then
+            echo "* - core unlimited" | $SUDO tee /etc/security/limits.d/core.conf >/dev/null
+        fi
+
+        # Reset kernel.core_pattern
+        if [ -f /proc/sys/kernel/core_pattern ]; then
+            echo "core" | $SUDO tee /proc/sys/kernel/core_pattern >/dev/null
+            if [ -d /etc/sysctl.d ]; then
+                echo "kernel.core_pattern = core" | $SUDO tee /etc/sysctl.d/99-core-pattern.conf >/dev/null
+            fi
+        fi
+    fi
+}
+
+# Package lists by distribution family
+packages_debian_common="bison ccache cron flex gcc gettext git gdb libgcrypt-dev libicu-dev libkrb5-dev libldap2-dev liblz4-dev libperl-dev libreadline-dev libssl-dev libxml2-dev libxslt-dev libwww-perl llvm-dev make perl python3-dev screen tcl tcl-dev tmux valgrind zlib1g-dev"
+
+packages_debian_old="$packages_debian_common libicu-le-hb-dev perl-modules clang"
+packages_debian_new="$packages_debian_common perl-modules pkg-config clang"
+
+packages_ubuntu_old="$packages_debian_common libicu-le-hb-dev clang"
+packages_ubuntu_new="$packages_debian_common clang"
+
+packages_rhel_common="bison cronie flex icu gcc git gdb gettext krb5-devel libgcrypt-devel libicu-devel libxml2-devel libxslt-devel lz4-devel make openldap-devel openssl-devel perl perl-Digest-SHA perl-ExtUtils-Embed perl-ExtUtils-MakeMaker perl-JSON-PP perl-LWP-Protocol-https python3-devel readline-devel tar tcl tcl-devel tmux valgrind zlib-devel"
+
+packages_rhel8="$packages_rhel_common clang llvm llvm-devel"
+packages_rhel7="$packages_rhel_common"
+
+packages_alma8="bison ccache clang cronie flex icu gcc git gdb gettext krb5-devel libgcrypt-devel libicu-devel libxml2-devel libxslt-devel llvm lz4-devel make openldap-devel openssl-devel perl perl-LWP-Protocol-https python3-devel readline-devel screen tar tcl tcl-devel tmux valgrind zlib-devel"
+packages_alma9="$packages_alma8"
+packages_el10="bison clang cronie flex icu gcc git gdb gettext krb5-devel libgcrypt-devel libicu-devel libxml2-devel libxslt-devel llvm lz4-devel make openldap-devel openssl-devel perl perl-LWP-Protocol-https python3-devel readline-devel tar tcl tcl-devel tmux valgrind zlib-devel"
+
+packages_fedora="bison ccache clang cronie flex icu gcc git gdb gettext krb5-devel libgcrypt-devel libicu-devel libxml2-devel libxslt-devel llvm-devel lz4-devel make openldap-devel openssl-devel perl perl-LWP-Protocol-https python3-devel readline-devel screen tar tcl tcl-devel tmux valgrind zlib-devel"
+
+packages_sles="bison ccache cronie flex gcc gcc-c++ git gdb gettext-runtime krb5-devel libicu-devel liblz4-devel libxml2-devel libxslt-devel make openldap2-devel openssl-devel perl perl-Digest-SHA1 perl-JSON perl-LWP-Protocol-https python3-devel readline-devel screen tar tcl tcl-devel valgrind zlib-devel"
+
+packages_freebsd="bison flex gdb gettext git gmake gtar icu icu-le-hb krb5-devel libxml2 libxslt openldap26-client openssl p5-LWP-Protocol-https p5-libwww perl5 python3 readline screen tcl86 tmux"
+
+# Install packages based on detected OS
+install_packages() {
+    case "$os_id" in
+        debian)
+            export DEBIAN_FRONTEND=noninteractive
+            sudo apt-get --yes update
+            if [ "$os_major" -lt 12 ]; then
+                sudo apt-get --yes install $packages_debian_old
+            else
+                sudo apt-get --yes install $packages_debian_new
+            fi
+            ;;
+        ubuntu)
+            export DEBIAN_FRONTEND=noninteractive
+            sudo apt-get --yes update
+            version_float=$(echo "$os_version" | awk -F. '{print $1"."$2}')
+            if [ "$(echo "$version_float < 24.04" | bc)" = "1" ]; then
+                sudo apt-get --yes install $packages_ubuntu_old
+            else
+                sudo apt-get --yes install $packages_ubuntu_new
+            fi
+            ;;
+        rhel|redhat|centos)
+            if [ "$os_major" = "7" ]; then
+                sudo yum install -y $packages_rhel7
+            else
+                sudo dnf install -y $packages_rhel8
+            fi
+            ;;
+        rocky)
+            if [ "$os_major" = "8" ]; then
+                sudo dnf install -y $packages_alma8
+            elif [ "$os_major" = "9" ]; then
+                sudo dnf install -y $packages_alma9
+            else
+                sudo dnf install -y $packages_el10
+            fi
+            ;;
+        almalinux|alma)
+            if [ "$os_major" = "8" ]; then
+                sudo dnf install -y $packages_alma8
+            elif [ "$os_major" = "9" ]; then
+                sudo dnf install -y $packages_alma9
+            else
+                sudo dnf install -y $packages_el10
+            fi
+            ;;
+        ol|oracle)
+            sudo dnf install -y $packages_rhel8
+            ;;
+        fedora)
+            sudo dnf install -y $packages_fedora
+            ;;
+        sles|opensuse*)
+            sudo zypper --non-interactive install $packages_sles
+            ;;
+        freebsd)
+            sudo pkg update -f
+            sudo pkg install -y $packages_freebsd
+            ;;
+        *)
+            echo "Unknown OS: $os_id" >&2
+            exit 1
+            ;;
+    esac
+}
+
+configure_system
+install_packages
+DONE

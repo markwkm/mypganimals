@@ -1,0 +1,4 @@
+#!/bin/sh
+# __buildfarm_cron/manifest
+#
+# Sets up cron job for a PostgreSQL Build Farm animal

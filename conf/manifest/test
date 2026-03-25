@@ -1,0 +1,19 @@
+#!/bin/sh
+# Run test builds for build farm animals
+#
+# Usage:
+#   skonfig -i conf/manifest/test HOST
+
+. "$__manifest/common"
+
+for animal_conf in "$host_dir"/*.conf; do
+    [ -f "$animal_conf" ] || continue
+
+    animal=$(basename "$animal_conf" .conf)
+
+    . "$animal_conf"
+
+    __buildfarm_test "$animal" \
+        --version "$BUILD_FARM_VERSION" \
+        --install-path "$install_path"
+done

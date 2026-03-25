@@ -1,0 +1,6 @@
+#!/bin/sh
+# __buildfarm_packages/manifest
+#
+# Installs required packages for PostgreSQL Build Farm based on OS
+
+# This type has no parameters - it auto-detects the OS
