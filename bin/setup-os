@@ -1,0 +1,123 @@
+#!/bin/sh
+
+export PYTHONWARNINGS="ignore"
+
+PKG_DEBIAN="bison ccache cron curl flex gcc gettext git gdb libgcrypt-dev libicu-dev libkrb5-dev libldap2-dev liblz4-dev libperl-dev libreadline-dev libssl-dev libxml2-dev libxslt-dev libwww-perl llvm-dev make perl pkg-config python3-dev screen tcl tcl-dev tmux valgrind zlib1g-dev"
+
+PKG_FEDORA="bison ccache clang cronie curl flex icu gcc git gdb gettext krb5-devel libgcrypt-devel libicu-devel libxml2-devel libxslt-devel llvm-devel lz4-devel make openldap-devel openssl-devel perl perl-LWP-Protocol-https python3-devel readline-devel screen tar tcl tcl-devel tmux valgrind zlib-devel"
+
+PKG_FREEBSD="bison flex gdb gettext git gmake gtar icu icu-le-hb krb5-devel libxml2 libxslt openldap26-client openssl p5-LWP-Protocol-https p5-libwww perl5 python3 readline screen tcl86 tmux"
+
+PKG_RHEL="bison clang cronie curl flex icu gcc git gdb gettext krb5-devel libgcrypt-devel libicu-devel libxml2-devel libxslt-devel llvm llvm-devel lz4-devel make openldap-devel openssl-devel perl perl-LWP-Protocol-https python3-devel readline-devel tar tcl tcl-devel tmux valgrind zlib-devel"
+
+PKG_CENTOS="bison clang cronie curl flex icu gcc git gdb gettext krb5-devel libgcrypt-devel libicu-devel libxml2-devel libxslt-devel llvm llvm-devel lz4-devel make openldap-devel openssl-devel perl perl-LWP-Protocol-https python3-devel readline-devel screen tar tcl tcl-devel tmux valgrind zlib-devel"
+PKG_RHEL_10="${PKG_CENTOS} ccache"
+
+PKG_ROCKY="bison clang cronie curl flex icu gcc git gdb gettext krb5-devel libgcrypt-devel libicu-devel libxml2-devel libxslt-devel llvm llvm-devel lz4-devel make openldap-devel openssl-devel perl perl-LWP-Protocol-https python3-devel readline-devel tar tcl tcl-devel tmux valgrind zlib-devel"
+PKG_ROCKY_10="${PKG_CENTOS} ccache"
+
+PKG_SLES="bison ccache cronie curl flex gcc gcc-c++ git gdb gettext-runtime krb5-devel libicu-devel liblz4-devel libxml2-devel libxslt-devel make openldap2-devel openssl-devel perl perl-Digest-SHA1 perl-JSON perl-LWP-Protocol-https python3-devel readline-devel screen tar tcl tcl-devel valgrind zlib-devel"
+
+PKG_UBUNTU="${PKG_DEBIAN}"
+
+do_work()
+{
+	OSRELEASE=$(salt-ssh "${THIS_ANIMAL}" --out json -r 'cat /etc/os-release' | jq -r ".${THIS_ANIMAL}.stdout")
+	if [ "${OSRELEASE}" = "" ]; then
+		echo "Could not retrieve /etc/os-release from ${THIS_ANIMAL}"
+		return 1
+	fi
+
+	OSID=$(printf "%s" "${OSRELEASE}" | grep '^ID=' | cut -d= -f2 | tr -d '"')
+	if [ "${OSID}" = "" ]; then
+		echo "Could not identify OS of ${THIS_ANIMAL}"
+		return 1
+	fi
+
+	OSVERSIONID=$(printf "%s" "${OSRELEASE}" | grep '^VERSION_ID=' | cut -d= -f2 | tr -d '"')
+	if [ "${OSVERSIONID}" = "" ]; then
+		echo "Could not identify OS version of ${THIS_ANIMAL}"
+		return 1
+	fi
+
+	echo "${THIS_ANIMAL} is ${OSID} ${OSVERSIONID}"
+
+	case "${OSID}" in
+	almalinux)
+		case "${OSVERSIONID}" in
+		9*) salt-ssh "${THIS_ANIMAL}" -r "sudo dnf install -y ${PKG_RHEL}" || return 3 ;;
+		*) salt-ssh "${THIS_ANIMAL}" -r "sudo dnf install -y ${PKG_RHEL_10}" || return 3 ;;
+		esac
+		;;
+	centos)
+		case "${OSVERSIONID}" in
+		7*) salt-ssh "${THIS_ANIMAL}" -r "sudo yum install -y ${PKG_CENTOS}" || return 3 ;;
+		*) salt-ssh "${THIS_ANIMAL}" -r "sudo dnf install -y ${PKG_CENTOS}" || return 3 ;;
+		esac
+		;;
+	debian) salt-ssh "${THIS_ANIMAL}" -r "DEBIAN_FRONTEND=noninteractive sudo apt-get --yes install ${PKG_DEBIAN}" || return 3 ;;
+	fedora) salt-ssh "${THIS_ANIMAL}" -r "sudo dnf install -y ${PKG_FEDORA}" || return 3 ;;
+	freebsd) salt-ssh "${THIS_ANIMAL}" -r "sudo pkg install -y ${PKG_FREEBSD}" || return 3 ;;
+	sles|opensuse-leap) salt-ssh "${THIS_ANIMAL}" -r "sudo zypper -n install -y ${PKG_SLES}" || return 3 ;;
+	rhel)
+		case "${OSVERSIONID}" in
+		7*) salt-ssh "${THIS_ANIMAL}" -r "sudo yum install -y ${PKG_RHEL}" || return 3 ;;
+		*) salt-ssh "${THIS_ANIMAL}" -r "sudo dnf install -y ${PKG_RHEL}" || return 3 ;;
+		esac
+		;;
+	rocky)
+		case "${OSVERSIONID}" in
+		9*) salt-ssh "${THIS_ANIMAL}" -r "sudo dnf install -y ${PKG_ROCKY}" || return 3 ;;
+		*) salt-ssh "${THIS_ANIMAL}" -r "sudo dnf install -y ${PKG_ROCKY_10}" || return 3 ;;
+		esac
+		;;
+	ubuntu)
+		salt-ssh "${THIS_ANIMAL}" -r "DEBIAN_FRONTEND=noninteractive sudo apt-get --yes install ${PKG_UBUNTU}" || return 3 ;;
+	*) echo "Unhandled OS ${OSID} ${OSVERSIONID}"; return 1;;
+	esac
+
+	return 0
+}
+
+ERROR=""
+NOOP=""
+SUCCESS=""
+UNEXPECTED=""
+
+for THIS_ANIMAL in $(yq -r '. | keys[]' salt/roster); do
+	if [ ! "${ANIMALS}" = "" ] && \
+			! echo "${ANIMALS}" | grep -Eq "(^|,)${THIS_ANIMAL}(,|$)"; then
+		continue
+	fi
+
+	echo "ANIMAL: ${THIS_ANIMAL}"
+	do_work
+	STATUS=${?}
+	case "${STATUS}" in
+	0) SUCCESS="${SUCCESS} ${THIS_ANIMAL}" ;;
+	1) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
+	2) NOOP="${NOOP} ${THIS_ANIMAL}" ;;
+	3) ERROR="${ERROR} ${THIS_ANIMAL}" ;;
+	*) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
+	esac
+done
+
+echo "SUCCESS"
+for ANIMAL in ${SUCCESS}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "NOTHING TO DO"
+for ANIMAL in ${NOOP}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "ERROR"
+for ANIMAL in ${ERROR}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "UNKNOWN ISSUE"
+for ANIMAL in ${UNEXPECTED}; do
+	echo "  ${ANIMAL}"
+done

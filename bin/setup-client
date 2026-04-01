@@ -1,0 +1,114 @@
+#!/bin/sh
+
+BUILD_ROOT='\$confdir/buildroot'
+CONFIG_OPTS="--enable-cassert --enable-debug --enable-nls --with-perl --with-python --with-tcl --with-gssapi --with-ldap --with-libxml --with-libxslt"
+EMAIL="markwkm@gmail.com"
+GLOBAL_LOCK_DIR="/tmp"
+
+export PYTHONWARNINGS="ignore"
+
+do_work()
+{
+	RC=$(salt-ssh "${THIS_ANIMAL}" --out json -r "[ -d ${THIS_ANIMAL} ] && printf \"1\" || printf \"0\"" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout")
+	if [ "${RC}" = "0" ]; then
+		echo "Build farm client is not downloaded for this ${THIS_ANIMAL}."
+		return 2
+	elif [ ! "${RC}" = "1" ]; then
+		echo "Unknown issue with ${THIS_ANIMAL}."
+		return 1
+	fi
+
+	salt-ssh "${THIS_ANIMAL}" -r "cp ${THIS_ANIMAL}/build-farm.conf.sample ${THIS_ANIMAL}/build-farm.conf" || return 3
+ 
+	salt-ssh "${THIS_ANIMAL}" -r "sed -i \"/animal[[:blank:]]*=>/ s/\\\"CHANGEME\\\"/\\\"${THIS_ANIMAL}\\\"/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+
+	SECRET=$(yq -r ".${THIS_ANIMAL}.secret // \"\"" salt/roster)
+	if [ ! "${SECRET}" = "" ]; then
+		salt-ssh "${THIS_ANIMAL}" -r "sed -i \"/secret[[:blank:]]*=>/ s/\\\"CHANGEME\\\"/\\\"${SECRET}\\\"/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	else
+		echo "You must define a secret in the roster file!"
+		return 3
+	fi
+
+	CC=$(yq -r ".${THIS_ANIMAL}.cc // \"\"" salt/roster)
+	if [ ! "${CC}" = "" ]; then
+		salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s/\\(CC[[:blank:]]*=>[[:blank:]]*'\\).*\\(',\\)/\\1${CC}\\2/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	fi
+
+	CXX=$(yq -r ".${THIS_ANIMAL}.cxx // \"\"" salt/roster)
+	if [ ! "${CXX}" = "" ]; then
+		salt-ssh "${THIS_ANIMAL}" -r "sed -i \"/CC[[:blank:]]*=>[[:blank:]]*'.*',/a CXX => '${CXX}',\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	fi
+
+	SCMREPO=$(yq -r ".${THIS_ANIMAL}.scmrepo // \"\"" salt/roster)
+	if [ ! "${SCMREPO}" = "" ]; then
+		salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s|scmrepo[[:blank:]]*=>[[:blank:]]*undef|scmrepo => '${SCMREPO}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	fi
+
+	MAKE=$(yq -r ".${THIS_ANIMAL}.make // \"\"" salt/roster)
+	if [ ! "${MAKE}" = "" ]; then
+		salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s|make[[:blank:]]*=>[[:blank:]]*'make'|make => '${MAKE}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	fi
+
+	BRANCHES_TO_BUILD=$(yq -r ".${THIS_ANIMAL}.branches_to_build // \"\"" salt/roster)
+	if [ ! "${BRANCHES_TO_BUILD}" = "" ]; then
+		salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s|branches_to_build[[:blank:]]*=>[[:blank:]]*'ALL'|branches_to_build => '${BRANCHES_TO_BUILD}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	fi
+
+	salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s|build_root[[:blank:]]*=>[[:blank:]]*undef|build_root => \\\"${BUILD_ROOT}\\\"|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s|global_lock_dir[[:blank:]]*=>[[:blank:]]*undef|global_lock_dir => '${GLOBAL_LOCK_DIR}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s/change[[:blank:]]*=>[[:blank:]]*\\\[\\\]/change => ['${EMAIL}']/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s/fail[[:blank:]]*=>[[:blank:]]*\\\[\\\]/fail => ['${EMAIL}']/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+
+	# This has the most sed & parsing problems, do this last so there are
+	# fewer things to fix by hand.
+
+	CONFIG_OPTS_EXTRA=$(yq -r ".${THIS_ANIMAL}.config_opts_extra // \"\"" salt/roster)
+	ESCAPED_OPTS=$(echo "${CONFIG_OPTS} ${CONFIG_OPTS_EXTRA}" | sed 's/\//\\\//g')
+	salt-ssh "${THIS_ANIMAL}" -r "sed -i '/config_opts[[:blank:]]*=>[[:blank:]]*\[/{:a;N;/)/!ba;s/qw([^)]*)/qw(${ESCAPED_OPTS})/}' ${THIS_ANIMAL}/build-farm.conf" || return 3
+
+	return 0
+}
+
+ERROR=""
+NOOP=""
+SUCCESS=""
+UNEXPECTED=""
+
+for THIS_ANIMAL in $(yq -r '. | keys[]' salt/roster); do
+	if [ ! "${ANIMALS}" = "" ] && \
+			! echo "${ANIMALS}" | grep -Eq "(^|,)${THIS_ANIMAL}(,|$)"; then
+		continue
+	fi
+
+	echo "ANIMAL: ${THIS_ANIMAL}"
+	do_work
+	STATUS=${?}
+	case "${STATUS}" in
+	0) SUCCESS="${SUCCESS} ${THIS_ANIMAL}" ;;
+	1) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
+	2) NOOP="${NOOP} ${THIS_ANIMAL}" ;;
+	3) ERROR="${ERROR} ${THIS_ANIMAL}" ;;
+	*) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
+	esac
+done
+
+echo "SUCCESS"
+for ANIMAL in ${SUCCESS}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "NOTHING TO DO"
+for ANIMAL in ${NOOP}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "ERROR"
+for ANIMAL in ${ERROR}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "UNKNOWN ISSUE"
+for ANIMAL in ${UNEXPECTED}; do
+	echo "  ${ANIMAL}"
+done

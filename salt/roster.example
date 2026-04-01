@@ -1,0 +1,19 @@
+minimal:
+  host: 140.211.11.21
+  user: debian
+  cc: ccache clang-13
+  hour: 3
+  install_path: /home/debian
+  secret: 843b944ef3216aa6d17bb259a06285bb
+all:
+  host: 140.211.11.27
+  user: freebsd
+  cc: clang
+  cxx: clang
+  config_opts_extra: --without-icu --with-lz4 --with-openssl --with-includes=/usr/local/include:/usr/local/include/readline
+  hour: 23
+  install_path: /usr/home/freebsd
+  make: gmake
+  branches_to_build: HEAD_PLUS_LATEST2
+  scmrepo: 'https://github.com/postgres/postgres'
+  secret: 46ffebe18d0fab8b76438e58818cf412

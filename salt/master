@@ -1,0 +1,8 @@
+root_dir: salt
+roster_file: salt/roster
+
+log_dir: salt/log
+pki_dir: salt/pki
+cachedir: salt/cache
+log_file: salt/salt.log
+ssh_log_file: salt/ssh.log

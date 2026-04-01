@@ -1,0 +1,67 @@
+#!/bin/sh
+set -x
+
+export PYTHONWARNINGS="ignore"
+
+do_work()
+{
+	RC=$(salt-ssh "${THIS_ANIMAL}" --out json -r "[ -d ${THIS_ANIMAL} ] && printf \"1\" || printf \"0\"" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout")
+	if [ "${RC}" = "1" ]; then
+		echo "Already downloaded, continuing..."
+		return 2
+	elif [ ! "${RC}" = "0" ]; then
+		echo "Something's wrong, continuing..."
+		return 1
+	fi
+
+	TMPDIR=$(mktemp -u -p /tmp tmp.PGBFANIMALXXX)
+	salt-ssh "${THIS_ANIMAL}" -r "mkdir -p ${TMPDIR}/${THIS_ANIMAL}" || return 3
+	salt-ssh "${THIS_ANIMAL}" -r "cd ${TMPDIR} && curl -OL https://buildfarm.postgresql.org/downloads/latest-client.tgz" || return 3
+	salt-ssh "${THIS_ANIMAL}" -r "tar --strip-components=1 -xvf ${TMPDIR}/latest-client.tgz -C ${TMPDIR}/${THIS_ANIMAL}" || return 3
+	salt-ssh "${THIS_ANIMAL}" -r "mv ${TMPDIR}/${THIS_ANIMAL} ." || return 3
+	salt-ssh "${THIS_ANIMAL}" -r "rm -rf ${TMPDIR}" || return 3
+	return 0
+}
+
+ERROR=""
+NOOP=""
+SUCCESS=""
+UNEXPECTED=""
+
+for THIS_ANIMAL in $(yq -r '. | keys[]' salt/roster); do
+	if [ ! "${ANIMALS}" = "" ] && \
+			! echo "$ANIMALS" | grep -Eq "(^|,)${THIS_ANIMAL}(,|$)"; then
+		continue
+	fi
+
+	echo "ANIMAL: ${THIS_ANIMAL}"
+	do_work
+	STATUS=${?}
+	case "${STATUS}" in
+	0) SUCCESS="${SUCCESS} ${THIS_ANIMAL}" ;;
+	1) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
+	2) NOOP="${NOOP} ${THIS_ANIMAL}" ;;
+	3) ERROR="${ERROR} ${THIS_ANIMAL}" ;;
+	*) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
+	esac
+done
+
+echo "SUCCESS"
+for ANIMAL in ${SUCCESS}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "NOTHING TO DO"
+for ANIMAL in ${NOOP}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "ERROR"
+for ANIMAL in ${ERROR}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "UNKNOWN ISSUE"
+for ANIMAL in ${UNEXPECTED}; do
+	echo "  ${ANIMAL}"
+done
