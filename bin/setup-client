@@ -1,7 +1,7 @@
 #!/bin/sh
 
 BUILD_ROOT='\$confdir/buildroot'
-CONFIG_OPTS="--enable-cassert --enable-debug --enable-nls --with-perl --with-python --with-tcl --with-gssapi --with-ldap --with-libxml --with-libxslt"
+CONFIG_OPTS="--enable-cassert --enable-debug --enable-nls --with-perl --with-tcl --with-gssapi --with-ldap --with-libxml --with-libxslt"
 EMAIL="markwkm@gmail.com"
 GLOBAL_LOCK_DIR="/tmp"
 
