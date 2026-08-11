@@ -1,5 +1,7 @@
 #!/bin/sh
 
+export PYTHONWARNINGS="ignore"
+
 do_work()
 {
 	salt-ssh "${THIS_ANIMAL}" -r "crontab -l | sed '/#Ansible: ${THIS_ANIMAL}/{N;d;}' | crontab -" || return 3

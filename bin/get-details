@@ -1,5 +1,7 @@
 #!/bin/sh
 
+export PYTHONWARNINGS="ignore"
+
 do_work()
 {
 	OSRELEASE=$(salt-ssh "${THIS_ANIMAL}" --out json -r 'cat /etc/os-release' | jq -r ".${THIS_ANIMAL}.stdout")
