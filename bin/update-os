@@ -1,0 +1,123 @@
+#!/bin/sh
+
+export PYTHONWARNINGS="ignore"
+
+do_work()
+{
+	OSRELEASE=$(salt-ssh "${THIS_ANIMAL}" --out json -r 'cat /etc/os-release' | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout")
+	if [ "${OSRELEASE}" = "" ]; then
+		echo "Could not retrieve /etc/os-release from ${THIS_ANIMAL}"
+		return 1
+	fi
+
+	OSID=$(printf "%s" "${OSRELEASE}" | grep '^ID=' | cut -d= -f2 | tr -d '"')
+	if [ "${OSID}" = "" ]; then
+		echo "Could not identify OS of ${THIS_ANIMAL}"
+		return 1
+	fi
+
+	OSVERSIONID=$(printf "%s" "${OSRELEASE}" | grep '^VERSION_ID=' | cut -d= -f2 | tr -d '"')
+	if [ "${OSVERSIONID}" = "" ]; then
+		echo "Could not identify OS version of ${THIS_ANIMAL}"
+		return 1
+	fi
+
+	echo "${THIS_ANIMAL} is ${OSID} ${OSVERSIONID}"
+
+	# Refuse to upgrade packages while a build is running: swapping
+	# compilers or libraries under a live run_build.pl can corrupt it.
+	# The build-farm client serializes runs with a per-branch advisory
+	# lock on buildroot/<branch>/builder.LCK (flock, LOCK_EX). Probing
+	# that same lock is the definitive check: a stale lock file can
+	# exist on disk without a running build, so we test the lock itself
+	# rather than the file's presence. Perl is used because it is
+	# present on every animal (the client is Perl) and its flock works
+	# uniformly on Linux and *BSD, unlike the flock(1) utility.
+	RUNNING=$(salt-ssh "${THIS_ANIMAL}" --out json -r "perl -e 'use Fcntl qw(:flock); my \$busy = 0; for my \$f (glob(\"${THIS_ANIMAL}/buildroot/*/builder.LCK\")) { open(my \$fh, \"<\", \$f) or next; \$busy = 1 unless flock(\$fh, LOCK_EX | LOCK_NB); close(\$fh); } print \$busy ? \"1\" : \"0\";'" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout")
+	if [ "${RUNNING}" = "1" ]; then
+		echo "A build is currently running for ${THIS_ANIMAL}; refusing to upgrade."
+		return 4
+	elif [ ! "${RUNNING}" = "0" ]; then
+		echo "Could not determine build status for ${THIS_ANIMAL}."
+		return 1
+	fi
+
+	# Upgrade all installed packages. Reboots are left to the user; a
+	# kernel/glibc upgrade will not take effect until you reboot.
+	# Assumes passwordless sudo.
+	case "${OSID}" in
+	almalinux|fedora|rocky)
+		salt-ssh "${THIS_ANIMAL}" -r "sudo dnf upgrade -y" || return 3 ;;
+	centos)
+		case "${OSVERSIONID}" in
+		7*) salt-ssh "${THIS_ANIMAL}" -r "sudo yum update -y" || return 3 ;;
+		*) salt-ssh "${THIS_ANIMAL}" -r "sudo dnf upgrade -y" || return 3 ;;
+		esac
+		;;
+	rhel)
+		case "${OSVERSIONID}" in
+		7*) salt-ssh "${THIS_ANIMAL}" -r "sudo yum update -y" || return 3 ;;
+		*) salt-ssh "${THIS_ANIMAL}" -r "sudo dnf upgrade -y" || return 3 ;;
+		esac
+		;;
+	debian|ubuntu)
+		salt-ssh "${THIS_ANIMAL}" -r "DEBIAN_FRONTEND=noninteractive sudo apt-get update && DEBIAN_FRONTEND=noninteractive sudo apt-get --yes upgrade" || return 3 ;;
+	freebsd)
+		salt-ssh "${THIS_ANIMAL}" -r "sudo pkg update && sudo pkg upgrade -y" || return 3 ;;
+	sles|opensuse-leap)
+		salt-ssh "${THIS_ANIMAL}" -r "sudo zypper -n refresh && sudo zypper -n update -y" || return 3 ;;
+	*) echo "Unhandled OS ${OSID} ${OSVERSIONID}"; return 1;;
+	esac
+
+	return 0
+}
+
+ERROR=""
+NOOP=""
+BUSY=""
+SUCCESS=""
+UNEXPECTED=""
+
+for THIS_ANIMAL in $(yq -r '. | keys[]' salt/roster); do
+	if [ ! "${ANIMALS}" = "" ] && \
+			! echo "${ANIMALS}" | grep -Eq "(^|,)${THIS_ANIMAL}(,|$)"; then
+		continue
+	fi
+
+	echo "ANIMAL: ${THIS_ANIMAL}"
+	do_work
+	STATUS=${?}
+	case "${STATUS}" in
+	0) SUCCESS="${SUCCESS} ${THIS_ANIMAL}" ;;
+	1) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
+	2) NOOP="${NOOP} ${THIS_ANIMAL}" ;;
+	3) ERROR="${ERROR} ${THIS_ANIMAL}" ;;
+	4) BUSY="${BUSY} ${THIS_ANIMAL}" ;;
+	*) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
+	esac
+done
+
+echo "SUCCESS"
+for ANIMAL in ${SUCCESS}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "NOTHING TO DO"
+for ANIMAL in ${NOOP}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "BUILD RUNNING"
+for ANIMAL in ${BUSY}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "ERROR"
+for ANIMAL in ${ERROR}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "UNKNOWN ISSUE"
+for ANIMAL in ${UNEXPECTED}; do
+	echo "  ${ANIMAL}"
+done
