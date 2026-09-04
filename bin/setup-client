@@ -72,6 +72,11 @@ do_work()
 		salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s|make[[:blank:]]*=>[[:blank:]]*'make'|make => '${MAKE}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
 	fi
 
+	MESON=$(yq -r ".${THIS_ANIMAL}.meson // \"\"" salt/roster)
+	if [ "${MESON}" = "true" ]; then
+		salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s|using_meson[[:blank:]]*=>[[:blank:]]*undef|using_meson => 'true'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	fi
+
 	BRANCHES_TO_BUILD=$(yq -r ".${THIS_ANIMAL}.branches_to_build // \"\"" salt/roster)
 	if [ ! "${BRANCHES_TO_BUILD}" = "" ]; then
 		salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s|branches_to_build[[:blank:]]*=>[[:blank:]]*'ALL'|branches_to_build => '${BRANCHES_TO_BUILD}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
@@ -88,6 +93,16 @@ do_work()
 	CONFIG_OPTS_EXTRA=$(yq -r ".${THIS_ANIMAL}.config_opts_extra // \"\"" salt/roster)
 	ESCAPED_OPTS=$(echo "${CONFIG_OPTS} ${CONFIG_OPTS_EXTRA}" | sed 's/\//\\\//g')
 	salt-ssh "${THIS_ANIMAL}" -r "sed -i '/config_opts[[:blank:]]*=>[[:blank:]]*\[/{:a;N;/)/!ba;s/qw([^)]*)/qw(${ESCAPED_OPTS})/}' ${THIS_ANIMAL}/build-farm.conf" || return 3
+
+	# Append meson_opts_extra to the sample's existing meson_opts qw()
+	# block, mirroring the config_opts handling above. The two extras
+	# lists are maintained by hand and kept in sync so the build is
+	# equivalent regardless of the meson setting.
+	MESON_OPTS_EXTRA=$(yq -r ".${THIS_ANIMAL}.meson_opts_extra // \"\"" salt/roster)
+	if [ ! "${MESON_OPTS_EXTRA}" = "" ]; then
+		ESCAPED_MESON_OPTS=$(echo "${MESON_OPTS_EXTRA}" | sed 's/\//\\\//g')
+		salt-ssh "${THIS_ANIMAL}" -r "sed -i '/meson_opts[[:blank:]]*=>[[:blank:]]*\[/{:a;N;/)/!ba;s/qw(\([^)]*\))/qw(\1 ${ESCAPED_MESON_OPTS})/}' ${THIS_ANIMAL}/build-farm.conf" || return 3
+	fi
 
 	return 0
 }
