@@ -18,6 +18,28 @@ do_work()
 		return 1
 	fi
 
+	# Disable this animal's scheduled builds before touching anything.
+	# Idempotent: does nothing if there is no matching crontab entry.
+	salt-ssh "${THIS_ANIMAL}" -r "crontab -l | sed '/#Ansible: ${THIS_ANIMAL}/{N;d;}' | crontab -" || return 3
+	echo "Cron successfully disabled for ${THIS_ANIMAL}."
+
+	# Make sure no build is currently running before rewriting the
+	# config. The build-farm client serializes runs with a per-branch
+	# advisory lock on buildroot/<branch>/builder.LCK (flock, LOCK_EX).
+	# Testing that same lock is the definitive check: a stale lock file
+	# can exist on disk without a running build, so we probe the lock
+	# itself rather than the file's presence. Perl is used because it is
+	# present on every animal (the client is Perl) and its flock works
+	# uniformly on Linux and *BSD, unlike the flock(1) utility.
+	RUNNING=$(salt-ssh "${THIS_ANIMAL}" --out json -r "perl -e 'use Fcntl qw(:flock); my \$busy = 0; for my \$f (glob(\"${THIS_ANIMAL}/buildroot/*/builder.LCK\")) { open(my \$fh, \"<\", \$f) or next; \$busy = 1 unless flock(\$fh, LOCK_EX | LOCK_NB); close(\$fh); } print \$busy ? \"1\" : \"0\";'" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout")
+	if [ "${RUNNING}" = "1" ]; then
+		echo "A build is currently running for ${THIS_ANIMAL}; skipping."
+		return 4
+	elif [ ! "${RUNNING}" = "0" ]; then
+		echo "Could not determine build status for ${THIS_ANIMAL}."
+		return 1
+	fi
+
 	salt-ssh "${THIS_ANIMAL}" -r "cp ${THIS_ANIMAL}/build-farm.conf.sample ${THIS_ANIMAL}/build-farm.conf" || return 3
  
 	salt-ssh "${THIS_ANIMAL}" -r "sed -i \"/animal[[:blank:]]*=>/ s/\\\"CHANGEME\\\"/\\\"${THIS_ANIMAL}\\\"/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
@@ -72,6 +94,7 @@ do_work()
 
 ERROR=""
 NOOP=""
+BUSY=""
 SUCCESS=""
 UNEXPECTED=""
 
@@ -89,6 +112,7 @@ for THIS_ANIMAL in $(yq -r '. | keys[]' salt/roster); do
 	1) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
 	2) NOOP="${NOOP} ${THIS_ANIMAL}" ;;
 	3) ERROR="${ERROR} ${THIS_ANIMAL}" ;;
+	4) BUSY="${BUSY} ${THIS_ANIMAL}" ;;
 	*) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
 	esac
 done
@@ -100,6 +124,11 @@ done
 
 echo "NOTHING TO DO"
 for ANIMAL in ${NOOP}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "BUILD RUNNING"
+for ANIMAL in ${BUSY}; do
 	echo "  ${ANIMAL}"
 done
 

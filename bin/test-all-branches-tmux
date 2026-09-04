@@ -1,0 +1,156 @@
+#!/bin/sh
+
+export PYTHONWARNINGS="ignore"
+
+# Run a remote command via salt-ssh and return its stdout, retrying
+# once on a transient failure. salt-ssh connections to some animals
+# occasionally drop ("lost server"), which yields an empty/null parse;
+# a single retry clears the vast majority of these. On persistent
+# failure the caller sees an empty string and treats it as unknown.
+probe()
+{
+	_cmd="${1}"
+	_out=$(salt-ssh "${THIS_ANIMAL}" --out json -r "${_cmd}" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout // \"\"" 2>/dev/null)
+	if [ "${_out}" = "" ] || [ "${_out}" = "null" ]; then
+		_out=$(salt-ssh "${THIS_ANIMAL}" --out json -r "${_cmd}" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout // \"\"" 2>/dev/null)
+	fi
+	printf "%s" "${_out}"
+}
+
+do_work()
+{
+	RC=$(probe "[ -d ${THIS_ANIMAL} ] && printf \"1\" || printf \"0\"")
+	if [ "${RC}" = "0" ]; then
+		echo "Build farm client is not downloaded for this ${THIS_ANIMAL}."
+		return 2
+	elif [ ! "${RC}" = "1" ]; then
+		echo "Could not reach ${THIS_ANIMAL} (connection failed)."
+		return 5
+	fi
+
+	# tmux is required on the remote to detach the run so it survives
+	# network disconnects. Report a distinct status if it is missing.
+	RC=$(probe "command -v tmux >/dev/null 2>&1 && printf \"1\" || printf \"0\"")
+	if [ "${RC}" = "0" ]; then
+		echo "tmux is not installed on ${THIS_ANIMAL}."
+		return 3
+	elif [ ! "${RC}" = "1" ]; then
+		echo "Could not check for tmux on ${THIS_ANIMAL} (connection failed)."
+		return 5
+	fi
+
+	# Refuse to start if a build is already running. The build-farm
+	# client serializes runs with a per-branch advisory lock on
+	# buildroot/<branch>/builder.LCK (flock, LOCK_EX). Probing that
+	# same lock is the definitive check: a stale lock file can exist
+	# on disk without a running build, so we test the lock itself
+	# rather than the file's presence. Perl is used because it is
+	# present on every animal (the client is Perl) and its flock works
+	# uniformly on Linux and *BSD, unlike the flock(1) utility.
+	RUNNING=$(probe "perl -e 'use Fcntl qw(:flock); my \$busy = 0; for my \$f (glob(\"${THIS_ANIMAL}/buildroot/*/builder.LCK\")) { open(my \$fh, \"<\", \$f) or next; \$busy = 1 unless flock(\$fh, LOCK_EX | LOCK_NB); close(\$fh); } print \$busy ? \"1\" : \"0\";'")
+	if [ "${RUNNING}" = "1" ]; then
+		echo "A build is currently running for ${THIS_ANIMAL}; refusing to start."
+		return 4
+	elif [ ! "${RUNNING}" = "0" ]; then
+		echo "Could not determine build status for ${THIS_ANIMAL} (connection failed)."
+		return 5
+	fi
+
+	# Refuse to start if a launcher session is already present, even
+	# if it is between branches and not holding the lock right now.
+	RC=$(probe "tmux has-session -t bf-${THIS_ANIMAL} 2>/dev/null && printf \"1\" || printf \"0\"")
+	if [ "${RC}" = "1" ]; then
+		echo "A tmux session bf-${THIS_ANIMAL} already exists; refusing to start."
+		return 4
+	fi
+
+	# Launch the run detached, then verify by post-condition.
+	#
+	# The command tmux runs is written to a small script in the client
+	# directory first, rather than passed inline. Passing "cd ... &&
+	# perl ... > log 2>&1" as a nested double-quoted argument to
+	# tmux inside a double-quoted salt-ssh -r "..." string does not
+	# survive the salt-ssh -> ssh -> shell -> tmux quoting layers: the
+	# redirect is lost and no log is produced. A script file sidesteps
+	# all of that; tmux just runs "sh run-tmux.sh".
+	#
+	# The launch call's connection can drop ("lost server"); rather
+	# than trust its exit code over a flaky link, we verify the session
+	# exists afterward and retry once if it did not take. The session
+	# ends and disappears when the run finishes; everything it printed
+	# is in tmux-run.log (stdout and stderr), so there is nothing extra
+	# to inspect in a lingering pane, and self-clearing sessions avoid
+	# a finished session blocking the next run for the same animal.
+	salt-ssh "${THIS_ANIMAL}" -r "printf '%s\n' '#!/bin/sh' 'cd ${THIS_ANIMAL} || exit 1' 'perl run_branches.pl --test --force --run-all > tmux-run.log 2>&1' > ${THIS_ANIMAL}/run-tmux.sh && chmod +x ${THIS_ANIMAL}/run-tmux.sh" >/dev/null 2>&1
+
+	_attempt=1
+	while [ "${_attempt}" -le 2 ]; do
+		salt-ssh "${THIS_ANIMAL}" -r "tmux new-session -d -s bf-${THIS_ANIMAL} sh ${THIS_ANIMAL}/run-tmux.sh" >/dev/null 2>&1
+		if [ "$(probe "tmux has-session -t bf-${THIS_ANIMAL} 2>/dev/null && printf \"1\" || printf \"0\"")" = "1" ]; then
+			echo "Launched run in tmux session bf-${THIS_ANIMAL}."
+			return 0
+		fi
+		_attempt=$((_attempt + 1))
+	done
+
+	echo "Launch did not take for ${THIS_ANIMAL} (connection failed)."
+	return 5
+}
+
+ERROR=""
+NOOP=""
+BUSY=""
+CONNFAIL=""
+SUCCESS=""
+UNEXPECTED=""
+
+for THIS_ANIMAL in $(yq -r '. | keys[]' salt/roster); do
+	if [ ! "${ANIMALS}" = "" ] && \
+			! echo "${ANIMALS}" | grep -Eq "(^|,)${THIS_ANIMAL}(,|$)"; then
+		continue
+	fi
+
+	echo "ANIMAL: ${THIS_ANIMAL}"
+
+	do_work
+	STATUS=${?}
+	case "${STATUS}" in
+	0) SUCCESS="${SUCCESS} ${THIS_ANIMAL}" ;;
+	1) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
+	2) NOOP="${NOOP} ${THIS_ANIMAL}" ;;
+	3) ERROR="${ERROR} ${THIS_ANIMAL}" ;;
+	4) BUSY="${BUSY} ${THIS_ANIMAL}" ;;
+	5) CONNFAIL="${CONNFAIL} ${THIS_ANIMAL}" ;;
+	*) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
+	esac
+done
+
+echo "SUCCESS"
+for ANIMAL in ${SUCCESS}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "NOTHING TO DO"
+for ANIMAL in ${NOOP}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "ALREADY RUNNING"
+for ANIMAL in ${BUSY}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "CONNECTION FAILED"
+for ANIMAL in ${CONNFAIL}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "ERROR"
+for ANIMAL in ${ERROR}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "UNKNOWN ISSUE"
+for ANIMAL in ${UNEXPECTED}; do
+	echo "  ${ANIMAL}"
+done

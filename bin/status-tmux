@@ -1,0 +1,113 @@
+#!/bin/sh
+
+# Number of trailing log lines to show per animal.
+LOG_TAIL="${LOG_TAIL:-10}"
+
+export PYTHONWARNINGS="ignore"
+
+# Run a remote command via salt-ssh and return its stdout, retrying
+# once on a transient failure (a dropped connection yields an empty
+# parse). See test-all-branches-tmux for the same helper.
+probe()
+{
+	_cmd="${1}"
+	_out=$(salt-ssh "${THIS_ANIMAL}" --out json -r "${_cmd}" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout // \"\"" 2>/dev/null)
+	if [ "${_out}" = "" ] || [ "${_out}" = "null" ]; then
+		_out=$(salt-ssh "${THIS_ANIMAL}" --out json -r "${_cmd}" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout // \"\"" 2>/dev/null)
+	fi
+	printf "%s" "${_out}"
+}
+
+do_work()
+{
+	RC=$(probe "[ -d ${THIS_ANIMAL} ] && printf \"1\" || printf \"0\"")
+	if [ "${RC}" = "0" ]; then
+		echo "Build farm client is not downloaded for this ${THIS_ANIMAL}."
+		return 2
+	elif [ ! "${RC}" = "1" ]; then
+		echo "Could not reach ${THIS_ANIMAL} (connection failed)."
+		return 5
+	fi
+
+	# Is the launcher's tmux session still alive?
+	SESSION=$(probe "command -v tmux >/dev/null 2>&1 && { tmux has-session -t bf-${THIS_ANIMAL} 2>/dev/null && printf \"1\" || printf \"0\"; } || printf \"x\"")
+	if [ "${SESSION}" = "1" ]; then
+		STATLINE="session-alive"
+	elif [ "${SESSION}" = "0" ]; then
+		STATLINE="session-gone"
+	elif [ "${SESSION}" = "x" ]; then
+		STATLINE="tmux-missing"
+	else
+		STATLINE="session-unknown"
+	fi
+
+	# Is a build actually running right now (holds builder.LCK)? This
+	# is independent of the session: the session can be alive between
+	# branches without holding the lock. See test-all-branches-tmux
+	# for why probing the lock is the definitive check.
+	RUNNING=$(probe "perl -e 'use Fcntl qw(:flock); my \$busy = 0; for my \$f (glob(\"${THIS_ANIMAL}/buildroot/*/builder.LCK\")) { open(my \$fh, \"<\", \$f) or next; \$busy = 1 unless flock(\$fh, LOCK_EX | LOCK_NB); close(\$fh); } print \$busy ? \"1\" : \"0\";'")
+	if [ "${RUNNING}" = "1" ]; then
+		STATLINE="${STATLINE} build-running"
+	elif [ "${RUNNING}" = "0" ]; then
+		STATLINE="${STATLINE} build-idle"
+	else
+		STATLINE="${STATLINE} build-unknown"
+	fi
+
+	echo "${THIS_ANIMAL}: ${STATLINE}"
+
+	# Show the tail of the run log, if present.
+	LOG=$(probe "[ -f ${THIS_ANIMAL}/tmux-run.log ] && tail -n ${LOG_TAIL} ${THIS_ANIMAL}/tmux-run.log || printf \"(no tmux-run.log)\"")
+	echo "${LOG}" | sed 's/^/    /'
+
+	return 0
+}
+
+ERROR=""
+NOOP=""
+CONNFAIL=""
+SUCCESS=""
+UNEXPECTED=""
+
+for THIS_ANIMAL in $(yq -r '. | keys[]' salt/roster); do
+	if [ ! "${ANIMALS}" = "" ] && \
+			! echo "${ANIMALS}" | grep -Eq "(^|,)${THIS_ANIMAL}(,|$)"; then
+		continue
+	fi
+
+	do_work
+	STATUS=${?}
+	case "${STATUS}" in
+	0) SUCCESS="${SUCCESS} ${THIS_ANIMAL}" ;;
+	1) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
+	2) NOOP="${NOOP} ${THIS_ANIMAL}" ;;
+	3) ERROR="${ERROR} ${THIS_ANIMAL}" ;;
+	5) CONNFAIL="${CONNFAIL} ${THIS_ANIMAL}" ;;
+	*) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
+	esac
+done
+
+echo "SUCCESS"
+for ANIMAL in ${SUCCESS}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "NOTHING TO DO"
+for ANIMAL in ${NOOP}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "ERROR"
+for ANIMAL in ${ERROR}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "CONNECTION FAILED"
+for ANIMAL in ${CONNFAIL}; do
+	echo "  ${ANIMAL}"
+done
+
+echo "UNKNOWN ISSUE"
+for ANIMAL in ${UNEXPECTED}; do
+	echo "  ${ANIMAL}"
+done
