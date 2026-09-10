@@ -1,0 +1,117 @@
+#!/bin/sh
+
+# Report the installed build farm client version per animal and compare
+# it against the latest released client version so you can tell which
+# animals need an upgrade.
+#
+# The installed version is read from the client's run_build.pl, which
+# declares its release tag as `$VERSION = 'REL_NN';`. The latest
+# released version is the newest REL_* tag from the client-code repo
+# (falls back to unknown if it cannot be fetched, in which case only
+# installed versions are reported).
+#
+# Animals are probed in parallel using background jobs, bounded to
+# ${JOBS} concurrent salt-ssh calls (default 8). Each job writes its
+# single output row to a per-animal temp file; the rows are printed in
+# roster order and aligned into a table once all jobs finish. Set JOBS
+# to tune the concurrency (e.g. JOBS=1 for fully serial).
+
+export PYTHONWARNINGS="ignore"
+
+JOBS=${JOBS:-8}
+
+LATEST=$(curl -sL \
+	https://api.github.com/repos/PGBuildFarm/client-code/tags \
+	| jq -r '.[].name' \
+	| grep -E '^REL_[0-9]' \
+	| head -n 1)
+if [ "${LATEST}" = "" ]; then
+	LATEST="unknown"
+fi
+
+WORKDIR=$(mktemp -d)
+trap 'rm -rf "${WORKDIR}"' EXIT INT TERM
+
+# Run a raw salt-ssh command for one animal and print that animal's
+# stdout field. salt-ssh's key-deploy routine calls input("[Y/n] ") on
+# its own stdin whenever a host returns "Permission denied"; in a
+# background job that stdin has no terminal, so feeding it a stream of
+# "n" answers declines the prompt instead of crashing with EOFError.
+# The extraction is prompt-tolerant: sed starts at the first line
+# containing '{' and then strips any leading non-'{' text (e.g. a leaked
+# "[Y/n] " prompt) so jq only ever sees valid JSON. jq stderr is
+# discarded so a declined (non-JSON) host does not emit a parse error;
+# such a host simply yields an empty version and is reported below.
+salt_json()
+{
+	_animal=$1
+	_cmd=$2
+	yes n 2>/dev/null \
+		| salt-ssh "${_animal}" --out json -r "${_cmd}" \
+		| sed -n '/{/,$p' \
+		| sed '1s/^[^{]*//' \
+		| jq -r ".${_animal}.stdout" 2>/dev/null
+}
+
+# Probe a single animal and write one space-separated row
+# (ANIMAL INSTALLED STATUS LATEST) to ${WORKDIR}/<animal>. A '-' is
+# used as the INSTALLED placeholder when no version could be read.
+do_work()
+{
+	THIS_ANIMAL=$1
+	OUT="${WORKDIR}/${THIS_ANIMAL}"
+
+	RC=$(salt_json "${THIS_ANIMAL}" \
+		"[ -f ${THIS_ANIMAL}/run_build.pl ] && printf \"1\" || printf \"0\"")
+	if [ "${RC}" = "0" ]; then
+		echo "${THIS_ANIMAL} - not-downloaded ${LATEST}" > "${OUT}"
+		return
+	elif [ ! "${RC}" = "1" ]; then
+		echo "${THIS_ANIMAL} - unknown ${LATEST}" > "${OUT}"
+		return
+	fi
+
+	VER=$(salt_json "${THIS_ANIMAL}" \
+		"grep -m1 'VERSION[[:blank:]]*=' ${THIS_ANIMAL}/run_build.pl" \
+		| sed -n "s/.*'\\(REL_[0-9_]*\\)'.*/\\1/p")
+	if [ "${VER}" = "" ]; then
+		echo "${THIS_ANIMAL} - version-unknown ${LATEST}" > "${OUT}"
+		return
+	fi
+
+	if [ "${LATEST}" = "unknown" ]; then
+		echo "${THIS_ANIMAL} ${VER} unknown ${LATEST}" > "${OUT}"
+	elif [ "${VER}" = "${LATEST}" ]; then
+		echo "${THIS_ANIMAL} ${VER} up-to-date ${LATEST}" > "${OUT}"
+	else
+		echo "${THIS_ANIMAL} ${VER} upgrade-available ${LATEST}" > "${OUT}"
+	fi
+}
+
+# Launch probes in parallel, capping at ${JOBS} concurrent jobs.
+ANIMALS_PROBED=""
+COUNT=0
+for THIS_ANIMAL in $(yq -r '. | keys[]' salt/roster); do
+	if [ ! "${ANIMALS}" = "" ] && \
+			! echo "${ANIMALS}" | grep -Eq "(^|,)${THIS_ANIMAL}(,|$)"; then
+		continue
+	fi
+
+	do_work "${THIS_ANIMAL}" &
+	ANIMALS_PROBED="${ANIMALS_PROBED} ${THIS_ANIMAL}"
+
+	COUNT=$((COUNT + 1))
+	if [ "${COUNT}" -ge "${JOBS}" ]; then
+		wait
+		COUNT=0
+	fi
+done
+wait
+
+# Print the collected rows in roster order, aligned into a table.
+{
+	echo "ANIMAL INSTALLED STATUS LATEST"
+	for THIS_ANIMAL in ${ANIMALS_PROBED}; do
+		[ -f "${WORKDIR}/${THIS_ANIMAL}" ] && cat "${WORKDIR}/${THIS_ANIMAL}"
+	done
+} | column -t
