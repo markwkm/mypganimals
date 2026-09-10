@@ -11,6 +11,8 @@ all:
   cc: clang
   cxx: clang
   config_opts_extra: --without-icu --with-lz4 --with-openssl --with-includes=/usr/local/include:/usr/local/include/readline
+  meson: true
+  meson_opts_extra: -Dicu=disabled -Dlz4=enabled -Dssl=openssl -Dextra_include_dirs=/usr/local/include,/usr/local/include/readline
   hour: 23
   install_path: /usr/home/freebsd
   make: gmake

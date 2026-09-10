@@ -72,6 +72,11 @@ do_work()
 		salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s|make[[:blank:]]*=>[[:blank:]]*'make'|make => '${MAKE}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
 	fi
 
+	VPATH=$(yq -r ".${THIS_ANIMAL}.vpath // \"\"" salt/roster)
+	if [ "${VPATH}" = "true" ]; then
+		salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s|use_vpath[[:blank:]]*=>[[:blank:]]*undef|use_vpath => 'true'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	fi
+
 	MESON=$(yq -r ".${THIS_ANIMAL}.meson // \"\"" salt/roster)
 	if [ "${MESON}" = "true" ]; then
 		salt-ssh "${THIS_ANIMAL}" -r "sed -i \"s|using_meson[[:blank:]]*=>[[:blank:]]*undef|using_meson => 'true'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
