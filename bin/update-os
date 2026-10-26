@@ -2,6 +2,48 @@
 
 export PYTHONWARNINGS="ignore"
 
+# Seconds between progress reports from run_progress.
+PROGRESS_INTERVAL="${PROGRESS_INTERVAL:-120}"
+
+# Run ${1} on ${THIS_ANIMAL} and report its progress while it runs.
+# salt-ssh -r returns a command's output only after the command exits,
+# so the command writes its output to a log file in the remote home
+# directory, and a separate salt-ssh call prints the last line of that
+# log every ${PROGRESS_INTERVAL} seconds. The full output is printed
+# when the command finishes, as before. The command runs under sh -c
+# because the login shell on some animals is not a POSIX shell, so ${1}
+# must not contain single quotes. Standard input is /dev/null, so a
+# command that prompts for input fails instead of waiting forever.
+# Returns the exit status of salt-ssh.
+run_progress()
+{
+	_log=".$(basename "${0}")-${THIS_ANIMAL}.log"
+
+	salt-ssh "${THIS_ANIMAL}" -r "sh -c '( ${1} ) < /dev/null > ${_log} 2>&1; _rc=\$?; cat ${_log}; rm -f ${_log}; exit \${_rc}'" &
+	_pid=${!}
+	trap 'kill ${_pid} 2> /dev/null; exit 130' INT TERM
+
+	_start=$(date +%s)
+	_next=$((_start + PROGRESS_INTERVAL))
+	while kill -0 ${_pid} 2> /dev/null; do
+		sleep 1
+		_now=$(date +%s)
+		if [ "${_now}" -lt "${_next}" ]; then
+			continue
+		fi
+		_next=$((_now + PROGRESS_INTERVAL))
+		_line=$(salt-ssh "${THIS_ANIMAL}" --out json -r "tail -n 5 ${_log}" 2> /dev/null | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout" 2> /dev/null | tr '\r' '\n' | grep -v '^[[:space:]]*$' | tail -n 1 | cut -c 1-100)
+		kill -0 ${_pid} 2> /dev/null || break
+		echo "$(date '+%H:%M:%S') ${THIS_ANIMAL} still running" \
+			"($(((_now - _start) / 60))m): ${_line}"
+	done
+
+	wait ${_pid}
+	_rc=${?}
+	trap - INT TERM
+	return ${_rc}
+}
+
 do_work()
 {
 	OSJSON=$(salt-ssh "${THIS_ANIMAL}" --out json -r 'cat /etc/os-release' | sed -n '/{/,$p')
@@ -58,30 +100,33 @@ do_work()
 		return 1
 	fi
 
+	echo "$(date '+%H:%M:%S') Upgrading packages on ${THIS_ANIMAL};" \
+		"progress every ${PROGRESS_INTERVAL}s..."
+
 	# Upgrade all installed packages. Reboots are left to the user; a
 	# kernel/glibc upgrade will not take effect until you reboot.
 	# Assumes passwordless sudo.
 	case "${OSID}" in
 	almalinux|fedora|rocky)
-		salt-ssh "${THIS_ANIMAL}" -r "sudo dnf upgrade -y" || return 3 ;;
+		run_progress "sudo dnf upgrade -y" || return 3 ;;
 	centos)
 		case "${OSVERSIONID}" in
-		7*) salt-ssh "${THIS_ANIMAL}" -r "sudo yum update -y" || return 3 ;;
-		*) salt-ssh "${THIS_ANIMAL}" -r "sudo dnf upgrade -y" || return 3 ;;
+		7*) run_progress "sudo yum update -y" || return 3 ;;
+		*) run_progress "sudo dnf upgrade -y" || return 3 ;;
 		esac
 		;;
 	rhel)
 		case "${OSVERSIONID}" in
-		7*) salt-ssh "${THIS_ANIMAL}" -r "sudo yum update -y" || return 3 ;;
-		*) salt-ssh "${THIS_ANIMAL}" -r "sudo dnf upgrade -y" || return 3 ;;
+		7*) run_progress "sudo yum update -y" || return 3 ;;
+		*) run_progress "sudo dnf upgrade -y" || return 3 ;;
 		esac
 		;;
 	debian|ubuntu)
-		salt-ssh "${THIS_ANIMAL}" -r "DEBIAN_FRONTEND=noninteractive sudo apt-get update && DEBIAN_FRONTEND=noninteractive sudo apt-get --yes upgrade" || return 3 ;;
+		run_progress "DEBIAN_FRONTEND=noninteractive sudo apt-get update && DEBIAN_FRONTEND=noninteractive sudo apt-get --yes upgrade" || return 3 ;;
 	freebsd)
-		salt-ssh "${THIS_ANIMAL}" -r "sudo pkg update && sudo pkg upgrade -y" || return 3 ;;
+		run_progress "sudo pkg update && sudo pkg upgrade -y" || return 3 ;;
 	sles|opensuse-leap)
-		salt-ssh "${THIS_ANIMAL}" -r "sudo zypper -n refresh && sudo zypper -n update -y" || return 3 ;;
+		run_progress "sudo zypper -n refresh && sudo zypper -n update -y" || return 3 ;;
 	*) echo "Unhandled OS ${OSID} ${OSVERSIONID}"; return 1;;
 	esac
 
@@ -94,15 +139,27 @@ BUSY=""
 SUCCESS=""
 UNEXPECTED=""
 
+# Select the animals first so that progress can be shown as N of TOTAL.
+SELECTED=""
+TOTAL=0
 for THIS_ANIMAL in $(yq -r '. | keys[]' salt/roster); do
 	if [ ! "${ANIMALS}" = "" ] && \
 			! echo "${ANIMALS}" | grep -Eq "(^|,)${THIS_ANIMAL}(,|$)"; then
 		continue
 	fi
+	SELECTED="${SELECTED} ${THIS_ANIMAL}"
+	TOTAL=$((TOTAL + 1))
+done
 
-	echo "ANIMAL: ${THIS_ANIMAL}"
+COUNT=0
+for THIS_ANIMAL in ${SELECTED}; do
+	COUNT=$((COUNT + 1))
+	START=$(date +%s)
+	echo "ANIMAL: ${THIS_ANIMAL} [${COUNT}/${TOTAL}] $(date '+%H:%M:%S')"
 	do_work
 	STATUS=${?}
+	echo "${THIS_ANIMAL} finished with status ${STATUS}" \
+		"in $(($(date +%s) - START))s"
 	case "${STATUS}" in
 	0) SUCCESS="${SUCCESS} ${THIS_ANIMAL}" ;;
 	1) UNEXPECTED="${UNEXPECTED} ${THIS_ANIMAL}" ;;
