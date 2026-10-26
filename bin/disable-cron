@@ -4,7 +4,7 @@ export PYTHONWARNINGS="ignore"
 
 do_work()
 {
-	salt-ssh "${THIS_ANIMAL}" -r "crontab -l | sed '/#Ansible: ${THIS_ANIMAL}/{N;d;}' | crontab -" || return 3
+	salt-ssh "${THIS_ANIMAL}" -r "crontab -l 2>/dev/null | sed '/#Ansible: ${THIS_ANIMAL}/{N;d;}' | crontab -" || return 3
 	return 0
 }
 

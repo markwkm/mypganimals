@@ -20,7 +20,7 @@ do_work()
 
 	# Disable this animal's scheduled builds before touching anything.
 	# Idempotent: does nothing if there is no matching crontab entry.
-	salt-ssh "${THIS_ANIMAL}" -r "crontab -l | sed '/#Ansible: ${THIS_ANIMAL}/{N;d;}' | crontab -" || return 3
+	salt-ssh "${THIS_ANIMAL}" -r "crontab -l 2>/dev/null | sed '/#Ansible: ${THIS_ANIMAL}/{N;d;}' | crontab -" || return 3
 	echo "Cron successfully disabled for ${THIS_ANIMAL}."
 
 	# Make sure no build is currently running before rewriting the
