@@ -6,7 +6,7 @@ PKG_DEBIAN="bison ccache cron curl flex gcc gettext git gdb libgcrypt-dev libicu
 
 PKG_FEDORA="bison ccache clang cronie curl flex icu gcc git gdb gettext krb5-devel libgcrypt-devel libicu-devel libxml2-devel libxslt-devel llvm-devel lz4-devel make meson ninja-build openldap-devel openssl-devel perl perl-LWP-Protocol-https python3-devel readline-devel screen tar tcl tcl-devel tmux valgrind zlib-devel"
 
-PKG_FREEBSD="bison flex gdb gettext git gmake gtar icu icu-le-hb krb5-devel libxml2 libxslt meson ninja openldap26-client openssl p5-LWP-Protocol-https p5-libwww perl5 python3 readline screen tcl86 tmux"
+PKG_FREEBSD="bison ccache4 flex gcc gdb gettext git gmake gtar icu icu-le-hb krb5-devel liblz4 libxml2 libxslt meson ninja openldap26-client openssl p5-LWP-Protocol-https p5-libwww perl5 pkgconf python3 readline screen tcl86 tmux"
 
 PKG_RHEL="bison clang cronie curl flex icu gcc git gdb gettext krb5-devel libgcrypt-devel libicu-devel libxml2-devel libxslt-devel llvm llvm-devel lz4-devel make meson ninja-build openldap-devel openssl-devel perl perl-LWP-Protocol-https python3-devel readline-devel tar tcl tcl-devel tmux valgrind zlib-devel"
 
