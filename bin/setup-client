@@ -105,10 +105,20 @@ do_work()
 	# block, mirroring the config_opts handling above. The two extras
 	# lists are maintained by hand and kept in sync so the build is
 	# equivalent regardless of the meson setting.
+	#
+	# The extras go after the qw() as separate q{} items, not inside
+	# it. Meson array options such as -Dextra_include_dirs=a,b need a
+	# comma, and the sample's "use warnings FATAL => 'qw'" turns a
+	# comma inside qw() into a compile error. q{} is used rather than
+	# '' because the sed expression is already single-quoted.
 	MESON_OPTS_EXTRA=$(yq -r ".${THIS_ANIMAL}.meson_opts_extra // \"\"" salt/roster)
 	if [ ! "${MESON_OPTS_EXTRA}" = "" ]; then
-		ESCAPED_MESON_OPTS=$(echo "${MESON_OPTS_EXTRA}" | sed 's/\//\\\//g')
-		salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak -e '/meson_opts[[:blank:]]*=>[[:blank:]]*\[/{' -e ':a' -e 'N' -e '/)/!ba' -e 's/qw(\([^)]*\))/qw(\1 ${ESCAPED_MESON_OPTS})/' -e '}' ${THIS_ANIMAL}/build-farm.conf" || return 3
+		MESON_ITEMS=""
+		for OPT in ${MESON_OPTS_EXTRA}; do
+			MESON_ITEMS="${MESON_ITEMS}, q{${OPT}}"
+		done
+		ESCAPED_MESON_ITEMS=$(echo "${MESON_ITEMS}" | sed 's/\//\\\//g')
+		salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak -e '/meson_opts[[:blank:]]*=>[[:blank:]]*\[/{' -e ':a' -e 'N' -e '/)/!ba' -e 's/qw(\([^)]*\))/qw(\1)${ESCAPED_MESON_ITEMS}/' -e '}' ${THIS_ANIMAL}/build-farm.conf" || return 3
 	fi
 
 	# sed -i takes the backup suffix attached (-i.bak) so the same
