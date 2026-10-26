@@ -55,7 +55,15 @@ enable_crb()
 
 do_work()
 {
-	OSRELEASE=$(salt-ssh "${THIS_ANIMAL}" --out json -r 'cat /etc/os-release' | jq -r ".${THIS_ANIMAL}.stdout")
+	OSJSON=$(salt-ssh "${THIS_ANIMAL}" --out json -r 'cat /etc/os-release' | sed -n '/{/,$p')
+	RETCODE=$(printf "%s" "${OSJSON}" | jq -r ".${THIS_ANIMAL} | if type == \"object\" then .retcode else \"none\" end")
+	if [ ! "${RETCODE}" = "0" ]; then
+		echo "Could not retrieve /etc/os-release from ${THIS_ANIMAL} (retcode ${RETCODE}):"
+		printf "%s\n" "${OSJSON}" | jq -r ".${THIS_ANIMAL} | if type == \"object\" then (.stdout, .stderr) | select(. != \"\") else . end"
+		return 1
+	fi
+
+	OSRELEASE=$(printf "%s" "${OSJSON}" | jq -r ".${THIS_ANIMAL}.stdout")
 	if [ "${OSRELEASE}" = "" ]; then
 		echo "Could not retrieve /etc/os-release from ${THIS_ANIMAL}"
 		return 1

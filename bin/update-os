@@ -4,7 +4,15 @@ export PYTHONWARNINGS="ignore"
 
 do_work()
 {
-	OSRELEASE=$(salt-ssh "${THIS_ANIMAL}" --out json -r 'cat /etc/os-release' | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout")
+	OSJSON=$(salt-ssh "${THIS_ANIMAL}" --out json -r 'cat /etc/os-release' | sed -n '/{/,$p')
+	RETCODE=$(printf "%s" "${OSJSON}" | jq -r ".${THIS_ANIMAL} | if type == \"object\" then .retcode else \"none\" end")
+	if [ ! "${RETCODE}" = "0" ]; then
+		echo "Could not retrieve /etc/os-release from ${THIS_ANIMAL} (retcode ${RETCODE}):"
+		printf "%s\n" "${OSJSON}" | jq -r ".${THIS_ANIMAL} | if type == \"object\" then (.stdout, .stderr) | select(. != \"\") else . end"
+		return 1
+	fi
+
+	OSRELEASE=$(printf "%s" "${OSJSON}" | jq -r ".${THIS_ANIMAL}.stdout")
 	if [ "${OSRELEASE}" = "" ]; then
 		echo "Could not retrieve /etc/os-release from ${THIS_ANIMAL}"
 		return 1
@@ -33,7 +41,15 @@ do_work()
 	# rather than the file's presence. Perl is used because it is
 	# present on every animal (the client is Perl) and its flock works
 	# uniformly on Linux and *BSD, unlike the flock(1) utility.
-	RUNNING=$(salt-ssh "${THIS_ANIMAL}" --out json -r "perl -e 'use Fcntl qw(:flock); my \$busy = 0; for my \$f (glob(\"${THIS_ANIMAL}/buildroot/*/builder.LCK\")) { open(my \$fh, \"<\", \$f) or next; \$busy = 1 unless flock(\$fh, LOCK_EX | LOCK_NB); close(\$fh); } print \$busy ? \"1\" : \"0\";'" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout")
+	LOCKJSON=$(salt-ssh "${THIS_ANIMAL}" --out json -r "perl -e 'use Fcntl qw(:flock); my \$busy = 0; for my \$f (glob(\"${THIS_ANIMAL}/buildroot/*/builder.LCK\")) { open(my \$fh, \"<\", \$f) or next; \$busy = 1 unless flock(\$fh, LOCK_EX | LOCK_NB); close(\$fh); } print \$busy ? \"1\" : \"0\";'" | sed -n '/{/,$p')
+	RETCODE=$(printf "%s" "${LOCKJSON}" | jq -r ".${THIS_ANIMAL} | if type == \"object\" then .retcode else \"none\" end")
+	if [ ! "${RETCODE}" = "0" ]; then
+		echo "Could not determine build status for ${THIS_ANIMAL} (retcode ${RETCODE}):"
+		printf "%s\n" "${LOCKJSON}" | jq -r ".${THIS_ANIMAL} | if type == \"object\" then (.stdout, .stderr) | select(. != \"\") else . end"
+		return 1
+	fi
+
+	RUNNING=$(printf "%s" "${LOCKJSON}" | jq -r ".${THIS_ANIMAL}.stdout")
 	if [ "${RUNNING}" = "1" ]; then
 		echo "A build is currently running for ${THIS_ANIMAL}; refusing to upgrade."
 		return 4
