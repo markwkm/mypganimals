@@ -81,18 +81,40 @@ do_work()
 	# is in tmux-run.log (stdout and stderr), so there is nothing extra
 	# to inspect in a lingering pane, and self-clearing sessions avoid
 	# a finished session blocking the next run for the same animal.
-	salt-ssh "${THIS_ANIMAL}" -r "printf '%s\n' '#!/bin/sh' 'cd ${THIS_ANIMAL} || exit 1' 'perl run_branches.pl --test --force --run-all > tmux-run.log 2>&1' > ${THIS_ANIMAL}/run-tmux.sh && chmod +x ${THIS_ANIMAL}/run-tmux.sh" >/dev/null 2>&1
+	#
+	# A missing session does not by itself mean the launch failed: if
+	# the run exits at once (for example, build-farm.conf does not
+	# compile), the session is already gone when we check. The old
+	# tmux-run.log is removed before launching, so a log present after
+	# a missing session means the run started and exited. That is
+	# reported with the end of the log and is not retried.
+	salt-ssh "${THIS_ANIMAL}" -r "rm -f ${THIS_ANIMAL}/tmux-run.log && printf '%s\n' '#!/bin/sh' 'cd ${THIS_ANIMAL} || exit 1' 'perl run_branches.pl --test --force --run-all > tmux-run.log 2>&1' > ${THIS_ANIMAL}/run-tmux.sh && chmod +x ${THIS_ANIMAL}/run-tmux.sh" >/dev/null 2>&1
 
 	_attempt=1
 	while [ "${_attempt}" -le 2 ]; do
 		salt-ssh "${THIS_ANIMAL}" -r "tmux new-session -d -s bf-${THIS_ANIMAL} sh ${THIS_ANIMAL}/run-tmux.sh" >/dev/null 2>&1
-		if [ "$(probe "tmux has-session -t bf-${THIS_ANIMAL} 2>/dev/null && printf \"1\" || printf \"0\"")" = "1" ]; then
+		RC=$(probe "tmux has-session -t bf-${THIS_ANIMAL} 2>/dev/null && printf \"1\" || printf \"0\"")
+		if [ "${RC}" = "1" ]; then
 			echo "Launched run in tmux session bf-${THIS_ANIMAL}."
 			return 0
+		elif [ "${RC}" = "0" ]; then
+			# The first line is 1 when the log exists and 0 when
+			# it does not, so an empty log is not mistaken for a
+			# missing one.
+			LOG=$(probe "[ -f ${THIS_ANIMAL}/tmux-run.log ] && printf \"1\n\" && tail -n 20 ${THIS_ANIMAL}/tmux-run.log || printf \"0\"")
+			if [ "$(printf "%s\n" "${LOG}" | head -n 1)" = "1" ]; then
+				echo "Run for ${THIS_ANIMAL} exited immediately; end of tmux-run.log:"
+				printf "%s\n" "${LOG}" | sed '1d; s/^/    /'
+				return 3
+			fi
 		fi
 		_attempt=$((_attempt + 1))
 	done
 
+	if [ "${RC}" = "0" ]; then
+		echo "Launch did not take for ${THIS_ANIMAL} (no tmux session and no tmux-run.log)."
+		return 1
+	fi
 	echo "Launch did not take for ${THIS_ANIMAL} (connection failed)."
 	return 5
 }
