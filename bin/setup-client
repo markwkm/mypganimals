@@ -7,9 +7,23 @@ GLOBAL_LOCK_DIR="/tmp"
 
 export PYTHONWARNINGS="ignore"
 
+# Run a command on this animal under sh. salt-ssh hands the command to
+# the remote login shell, which can be csh (FreeBSD), and csh cannot
+# parse \" inside double quotes or 2>/dev/null. The command is passed
+# to sh -c in single quotes, which csh and sh parse the same way, with
+# each embedded single quote written as '\''. csh also expands history
+# on ! inside single quotes, so each ! is written as '\!', which both
+# shells read as a literal !. Extra arguments go to salt-ssh.
+remote()
+{
+	_cmd=$(printf '%s' "${1}" | sed "s/'/'\\\\''/g; s/!/'\\\\!'/g")
+	shift
+	salt-ssh "${THIS_ANIMAL}" "$@" -r "sh -c '${_cmd}'"
+}
+
 do_work()
 {
-	RC=$(salt-ssh "${THIS_ANIMAL}" --out json -r "[ -d ${THIS_ANIMAL} ] && printf \"1\" || printf \"0\"" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout")
+	RC=$(remote "[ -d ${THIS_ANIMAL} ] && printf \"1\" || printf \"0\"" --out json | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout")
 	if [ "${RC}" = "0" ]; then
 		echo "Build farm client is not downloaded for this ${THIS_ANIMAL}."
 		return 2
@@ -20,7 +34,7 @@ do_work()
 
 	# Disable this animal's scheduled builds before touching anything.
 	# Idempotent: does nothing if there is no matching crontab entry.
-	salt-ssh "${THIS_ANIMAL}" -r "crontab -l 2>/dev/null | sed '/#Ansible: ${THIS_ANIMAL}/{N;d;}' | crontab -" || return 3
+	remote "crontab -l 2>/dev/null | sed '/#Ansible: ${THIS_ANIMAL}/{N;d;}' | crontab -" || return 3
 	echo "Cron successfully disabled for ${THIS_ANIMAL}."
 
 	# Make sure no build is currently running before rewriting the
@@ -31,7 +45,7 @@ do_work()
 	# itself rather than the file's presence. Perl is used because it is
 	# present on every animal (the client is Perl) and its flock works
 	# uniformly on Linux and *BSD, unlike the flock(1) utility.
-	RUNNING=$(salt-ssh "${THIS_ANIMAL}" --out json -r "perl -e 'use Fcntl qw(:flock); my \$busy = 0; for my \$f (glob(\"${THIS_ANIMAL}/buildroot/*/builder.LCK\")) { open(my \$fh, \"<\", \$f) or next; \$busy = 1 unless flock(\$fh, LOCK_EX | LOCK_NB); close(\$fh); } print \$busy ? \"1\" : \"0\";'" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout")
+	RUNNING=$(remote "perl -e 'use Fcntl qw(:flock); my \$busy = 0; for my \$f (glob(\"${THIS_ANIMAL}/buildroot/*/builder.LCK\")) { open(my \$fh, \"<\", \$f) or next; \$busy = 1 unless flock(\$fh, LOCK_EX | LOCK_NB); close(\$fh); } print \$busy ? \"1\" : \"0\";'" --out json | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout")
 	if [ "${RUNNING}" = "1" ]; then
 		echo "A build is currently running for ${THIS_ANIMAL}; skipping."
 		return 4
@@ -40,13 +54,13 @@ do_work()
 		return 1
 	fi
 
-	salt-ssh "${THIS_ANIMAL}" -r "cp ${THIS_ANIMAL}/build-farm.conf.sample ${THIS_ANIMAL}/build-farm.conf" || return 3
+	remote "cp ${THIS_ANIMAL}/build-farm.conf.sample ${THIS_ANIMAL}/build-farm.conf" || return 3
  
-	salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak \"/animal[[:blank:]]*=>/ s/\\\"CHANGEME\\\"/\\\"${THIS_ANIMAL}\\\"/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	remote "sed -i.bak \"/animal[[:blank:]]*=>/ s/\\\"CHANGEME\\\"/\\\"${THIS_ANIMAL}\\\"/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
 
 	SECRET=$(yq -r ".${THIS_ANIMAL}.secret // \"\"" salt/roster)
 	if [ ! "${SECRET}" = "" ]; then
-		salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak \"/secret[[:blank:]]*=>/ s/\\\"CHANGEME\\\"/\\\"${SECRET}\\\"/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+		remote "sed -i.bak \"/secret[[:blank:]]*=>/ s/\\\"CHANGEME\\\"/\\\"${SECRET}\\\"/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
 	else
 		echo "You must define a secret in the roster file!"
 		return 3
@@ -54,43 +68,43 @@ do_work()
 
 	CC=$(yq -r ".${THIS_ANIMAL}.cc // \"\"" salt/roster)
 	if [ ! "${CC}" = "" ]; then
-		salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak \"s/\\(CC[[:blank:]]*=>[[:blank:]]*'\\).*\\(',\\)/\\1${CC}\\2/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+		remote "sed -i.bak \"s/\\(CC[[:blank:]]*=>[[:blank:]]*'\\).*\\(',\\)/\\1${CC}\\2/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
 	fi
 
 	CXX=$(yq -r ".${THIS_ANIMAL}.cxx // \"\"" salt/roster)
 	if [ ! "${CXX}" = "" ]; then
-		salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak \"/CC[[:blank:]]*=>[[:blank:]]*'.*',/a CXX => '${CXX}',\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+		remote "sed -i.bak \"/CC[[:blank:]]*=>[[:blank:]]*'.*',/a CXX => '${CXX}',\" ${THIS_ANIMAL}/build-farm.conf" || return 3
 	fi
 
 	SCMREPO=$(yq -r ".${THIS_ANIMAL}.scmrepo // \"\"" salt/roster)
 	if [ ! "${SCMREPO}" = "" ]; then
-		salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak \"s|scmrepo[[:blank:]]*=>[[:blank:]]*undef|scmrepo => '${SCMREPO}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+		remote "sed -i.bak \"s|scmrepo[[:blank:]]*=>[[:blank:]]*undef|scmrepo => '${SCMREPO}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
 	fi
 
 	MAKE=$(yq -r ".${THIS_ANIMAL}.make // \"\"" salt/roster)
 	if [ ! "${MAKE}" = "" ]; then
-		salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak \"s|make[[:blank:]]*=>[[:blank:]]*'make'|make => '${MAKE}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+		remote "sed -i.bak \"s|make[[:blank:]]*=>[[:blank:]]*'make'|make => '${MAKE}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
 	fi
 
 	VPATH=$(yq -r ".${THIS_ANIMAL}.vpath // \"\"" salt/roster)
 	if [ "${VPATH}" = "true" ]; then
-		salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak \"s|use_vpath[[:blank:]]*=>[[:blank:]]*undef|use_vpath => 'true'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+		remote "sed -i.bak \"s|use_vpath[[:blank:]]*=>[[:blank:]]*undef|use_vpath => 'true'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
 	fi
 
 	MESON=$(yq -r ".${THIS_ANIMAL}.meson // \"\"" salt/roster)
 	if [ "${MESON}" = "true" ]; then
-		salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak \"s|using_meson[[:blank:]]*=>[[:blank:]]*undef|using_meson => 'true'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+		remote "sed -i.bak \"s|using_meson[[:blank:]]*=>[[:blank:]]*undef|using_meson => 'true'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
 	fi
 
 	BRANCHES_TO_BUILD=$(yq -r ".${THIS_ANIMAL}.branches_to_build // \"\"" salt/roster)
 	if [ ! "${BRANCHES_TO_BUILD}" = "" ]; then
-		salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak \"s|branches_to_build[[:blank:]]*=>[[:blank:]]*'ALL'|branches_to_build => '${BRANCHES_TO_BUILD}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+		remote "sed -i.bak \"s|branches_to_build[[:blank:]]*=>[[:blank:]]*'ALL'|branches_to_build => '${BRANCHES_TO_BUILD}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
 	fi
 
-	salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak \"s|build_root[[:blank:]]*=>[[:blank:]]*undef|build_root => \\\"${BUILD_ROOT}\\\"|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
-	salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak \"s|global_lock_dir[[:blank:]]*=>[[:blank:]]*undef|global_lock_dir => '${GLOBAL_LOCK_DIR}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
-	salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak \"s/change[[:blank:]]*=>[[:blank:]]*\\\[\\\]/change => ['${EMAIL}']/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
-	salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak \"s/fail[[:blank:]]*=>[[:blank:]]*\\\[\\\]/fail => ['${EMAIL}']/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	remote "sed -i.bak \"s|build_root[[:blank:]]*=>[[:blank:]]*undef|build_root => \\\"${BUILD_ROOT}\\\"|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	remote "sed -i.bak \"s|global_lock_dir[[:blank:]]*=>[[:blank:]]*undef|global_lock_dir => '${GLOBAL_LOCK_DIR}'|\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	remote "sed -i.bak \"s/change[[:blank:]]*=>[[:blank:]]*\\\[\\\]/change => ['${EMAIL}']/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
+	remote "sed -i.bak \"s/fail[[:blank:]]*=>[[:blank:]]*\\\[\\\]/fail => ['${EMAIL}']/\" ${THIS_ANIMAL}/build-farm.conf" || return 3
 
 	# This has the most sed & parsing problems, do this last so there are
 	# fewer things to fix by hand.
@@ -99,7 +113,7 @@ do_work()
 	ESCAPED_OPTS=$(echo "${CONFIG_OPTS} ${CONFIG_OPTS_EXTRA}" | sed 's/\//\\\//g')
 	# Each sed command is a separate -e because BSD sed reads a label
 	# name up to the end of the line, semicolons included.
-	salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak -e '/config_opts[[:blank:]]*=>[[:blank:]]*\[/{' -e ':a' -e 'N' -e '/)/!ba' -e 's/qw([^)]*)/qw(${ESCAPED_OPTS})/' -e '}' ${THIS_ANIMAL}/build-farm.conf" || return 3
+	remote "sed -i.bak -e '/config_opts[[:blank:]]*=>[[:blank:]]*\[/{' -e ':a' -e 'N' -e '/)/!ba' -e 's/qw([^)]*)/qw(${ESCAPED_OPTS})/' -e '}' ${THIS_ANIMAL}/build-farm.conf" || return 3
 
 	# Append meson_opts_extra to the sample's existing meson_opts qw()
 	# block, mirroring the config_opts handling above. The two extras
@@ -118,12 +132,12 @@ do_work()
 			MESON_ITEMS="${MESON_ITEMS}, q{${OPT}}"
 		done
 		ESCAPED_MESON_ITEMS=$(echo "${MESON_ITEMS}" | sed 's/\//\\\//g')
-		salt-ssh "${THIS_ANIMAL}" -r "sed -i.bak -e '/meson_opts[[:blank:]]*=>[[:blank:]]*\[/{' -e ':a' -e 'N' -e '/)/!ba' -e 's/qw(\([^)]*\))/qw(\1)${ESCAPED_MESON_ITEMS}/' -e '}' ${THIS_ANIMAL}/build-farm.conf" || return 3
+		remote "sed -i.bak -e '/meson_opts[[:blank:]]*=>[[:blank:]]*\[/{' -e ':a' -e 'N' -e '/)/!ba' -e 's/qw(\([^)]*\))/qw(\1)${ESCAPED_MESON_ITEMS}/' -e '}' ${THIS_ANIMAL}/build-farm.conf" || return 3
 	fi
 
 	# sed -i takes the backup suffix attached (-i.bak) so the same
 	# command works with both GNU and BSD sed. Drop the backup.
-	salt-ssh "${THIS_ANIMAL}" -r "rm -f ${THIS_ANIMAL}/build-farm.conf.bak" || return 3
+	remote "rm -f ${THIS_ANIMAL}/build-farm.conf.bak" || return 3
 
 	return 0
 }
