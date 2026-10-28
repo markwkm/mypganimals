@@ -2,9 +2,18 @@
 
 export PYTHONWARNINGS="ignore"
 
+# Run a command on this animal under sh. salt-ssh hands the command to
+# the remote login shell, which can be csh (FreeBSD). See setup-client.
+remote()
+{
+	_cmd=$(printf '%s' "${1}" | sed "s/'/'\\\\''/g; s/!/'\\\\!'/g")
+	shift
+	salt-ssh "${THIS_ANIMAL}" "$@" -r "sh -c '${_cmd}'"
+}
+
 do_work()
 {
-	RC=$(salt-ssh "${THIS_ANIMAL}" --out json -r "[ -d ${THIS_ANIMAL} ] && printf \"1\" || printf \"0\"" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout")
+	RC=$(remote "[ -d ${THIS_ANIMAL} ] && printf \"1\" || printf \"0\"" --out json | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout")
 	if [ "${RC}" = "0" ]; then
 		echo "Build farm client is not downloaded for this ${THIS_ANIMAL}."
 		return 2
@@ -19,10 +28,13 @@ do_work()
 		return 3
 	fi
 
-	salt-ssh "${THIS_ANIMAL}" -r "crontab -l | grep -q '#Ansible: ${THIS_ANIMAL}' && \
-(crontab -l | sed '/#Ansible: ${THIS_ANIMAL}/{n;c 8 ${HOUR} * * * cd '\${HOME}'/${THIS_ANIMAL} && perl ./run_branches.pl --run-all
-}' | crontab -) || \
-(crontab -l; echo '#Ansible: ${THIS_ANIMAL}'; echo '8 ${HOUR} * * * cd '\${HOME}'/${THIS_ANIMAL} && perl ./run_branches.pl --run-all') | crontab -"
+	# Remove any existing entry for this animal, then append the current
+	# one. The removal matches disable-cron. Editing the entry in place
+	# would need sed's c command, whose text must follow a newline in
+	# BSD sed, and csh rejects a newline inside quotes.
+	remote "(crontab -l 2>/dev/null | sed '/#Ansible: ${THIS_ANIMAL}/{N;d;}'; \
+echo '#Ansible: ${THIS_ANIMAL}'; \
+echo \"8 ${HOUR} * * * cd \${HOME}/${THIS_ANIMAL} && perl ./run_branches.pl --run-all\") | crontab -" || return 3
 
 	return 0
 }
