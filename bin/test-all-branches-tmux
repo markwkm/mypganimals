@@ -2,6 +2,16 @@
 
 export PYTHONWARNINGS="ignore"
 
+# Run a command on this animal under sh. salt-ssh hands the command to
+# the remote login shell, which can be csh or tcsh (FreeBSD). See
+# setup-client. Extra arguments go to salt-ssh.
+remote()
+{
+	_cmd=$(printf '%s' "${1}" | sed "s/'/'\\\\''/g; s/!/'\\\\!'/g")
+	shift
+	salt-ssh "${THIS_ANIMAL}" "$@" -r "sh -c '${_cmd}'"
+}
+
 # Run a remote command via salt-ssh and return its stdout, retrying
 # once on a transient failure. salt-ssh connections to some animals
 # occasionally drop ("lost server"), which yields an empty/null parse;
@@ -10,9 +20,9 @@ export PYTHONWARNINGS="ignore"
 probe()
 {
 	_cmd="${1}"
-	_out=$(salt-ssh "${THIS_ANIMAL}" --out json -r "${_cmd}" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout // \"\"" 2>/dev/null)
+	_out=$(remote "${_cmd}" --out json | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout // \"\"" 2>/dev/null)
 	if [ "${_out}" = "" ] || [ "${_out}" = "null" ]; then
-		_out=$(salt-ssh "${THIS_ANIMAL}" --out json -r "${_cmd}" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout // \"\"" 2>/dev/null)
+		_out=$(remote "${_cmd}" --out json | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout // \"\"" 2>/dev/null)
 	fi
 	printf "%s" "${_out}"
 }
@@ -88,11 +98,11 @@ do_work()
 	# tmux-run.log is removed before launching, so a log present after
 	# a missing session means the run started and exited. That is
 	# reported with the end of the log and is not retried.
-	salt-ssh "${THIS_ANIMAL}" -r "rm -f ${THIS_ANIMAL}/tmux-run.log && printf '%s\n' '#!/bin/sh' 'cd ${THIS_ANIMAL} || exit 1' 'perl run_branches.pl --test --force --run-all > tmux-run.log 2>&1' > ${THIS_ANIMAL}/run-tmux.sh && chmod +x ${THIS_ANIMAL}/run-tmux.sh" >/dev/null 2>&1
+	remote "rm -f ${THIS_ANIMAL}/tmux-run.log && printf '%s\n' '#!/bin/sh' 'cd ${THIS_ANIMAL} || exit 1' 'perl run_branches.pl --test --force --run-all > tmux-run.log 2>&1' > ${THIS_ANIMAL}/run-tmux.sh && chmod +x ${THIS_ANIMAL}/run-tmux.sh" >/dev/null 2>&1
 
 	_attempt=1
 	while [ "${_attempt}" -le 2 ]; do
-		salt-ssh "${THIS_ANIMAL}" -r "tmux new-session -d -s bf-${THIS_ANIMAL} sh ${THIS_ANIMAL}/run-tmux.sh" >/dev/null 2>&1
+		remote "tmux new-session -d -s bf-${THIS_ANIMAL} sh ${THIS_ANIMAL}/run-tmux.sh" >/dev/null 2>&1
 		RC=$(probe "tmux has-session -t bf-${THIS_ANIMAL} 2>/dev/null && printf \"1\" || printf \"0\"")
 		if [ "${RC}" = "1" ]; then
 			echo "Launched run in tmux session bf-${THIS_ANIMAL}."

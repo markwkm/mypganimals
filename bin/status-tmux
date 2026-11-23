@@ -5,15 +5,25 @@ LOG_TAIL="${LOG_TAIL:-10}"
 
 export PYTHONWARNINGS="ignore"
 
+# Run a command on this animal under sh. salt-ssh hands the command to
+# the remote login shell, which can be csh or tcsh (FreeBSD). See
+# setup-client. Extra arguments go to salt-ssh.
+remote()
+{
+	_cmd=$(printf '%s' "${1}" | sed "s/'/'\\\\''/g; s/!/'\\\\!'/g")
+	shift
+	salt-ssh "${THIS_ANIMAL}" "$@" -r "sh -c '${_cmd}'"
+}
+
 # Run a remote command via salt-ssh and return its stdout, retrying
 # once on a transient failure (a dropped connection yields an empty
 # parse). See test-all-branches-tmux for the same helper.
 probe()
 {
 	_cmd="${1}"
-	_out=$(salt-ssh "${THIS_ANIMAL}" --out json -r "${_cmd}" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout // \"\"" 2>/dev/null)
+	_out=$(remote "${_cmd}" --out json | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout // \"\"" 2>/dev/null)
 	if [ "${_out}" = "" ] || [ "${_out}" = "null" ]; then
-		_out=$(salt-ssh "${THIS_ANIMAL}" --out json -r "${_cmd}" | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout // \"\"" 2>/dev/null)
+		_out=$(remote "${_cmd}" --out json | sed -n '/{/,$p' | jq -r ".${THIS_ANIMAL}.stdout // \"\"" 2>/dev/null)
 	fi
 	printf "%s" "${_out}"
 }
